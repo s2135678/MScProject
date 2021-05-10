@@ -5,6 +5,12 @@
 # Session Data files
 .RData
 
+# R project files 
+.Rproj
+
+# Heavy raw data 
+data/*.RDS
+
 # Intermediate R Objects
 data/processed/*.RDS
 
