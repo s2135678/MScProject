@@ -5,6 +5,9 @@
 # Session Data files
 .RData
 
+# Intermediate R Objects
+data/processed/*.RDS
+
 # User-specific files
 .Ruserdata
 
