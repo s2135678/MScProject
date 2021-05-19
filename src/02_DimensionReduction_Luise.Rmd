@@ -33,3 +33,41 @@ all.genes <- rownames(ecpc)
 ecpc <- ScaleData(ecpc, features = all.genes)
 ```
 
+## Linear Dimensional reduction
+Here, I performed PCA on scaled data. PCA is only run on top 2000 HVG identified during feature selection. Each PC is one dimension (a factor that gives variation to data) with mid-point of 0. So, If a gene has score of 0 at PC1, then the gene doesn't play any role in explaining variation on PC1. Further away from 0 (positive or negative), gene has sizable roles in explaining variation due to that PC. 
+
+```{r}
+ecpc <- RunPCA(ecpc, features= VariableFeatures(ecpc))
+print(ecpc[["pca"]], dims = 1:5, nfeatures = 5)
+head(Embeddings(ecpc, reduction = "pca")[, 1:5])
+```
+
+Here, I visualised top genes associated with reduction components. 
+```{r, fig.width=10, fig.height=8, fig.fullwidth=TRUE}
+VizDimLoadings(ecpc, dims = 1:2, reduction = "pca")
+DimPlot(ecpc, reduction='pca')
+```
+Here, I plotted heatmap of dimensional reduction, with cells on column and genes on row. Both cell and genes are sorted by their principcal component scores. Principal component score increases from negative (ELOVL7) to 0 to positive (PRKG1) as seen in visualisation above. Extreme cells are placed on the two ends on the plot. 
+
+```{r}
+DimHeatmap(ecpc, dims = 1, cells = 500, balanced = TRUE)
+```
+```{r, fig.width=10, fig.height=55, fig.fullwidth=TRUE}
+DimHeatmap(ecpc, dims = 1:20, cells = 500, balanced = TRUE)
+```
+
+Elbow plot is used to determine the number of PCs to retain for downstream analysis. The plot shows the percentage of variance explained as a function of increasing PC. The threshold will be chosen at a point in which adding another PC does not significantly increase the variance. To begin with I chose 25. 
+
+```{r}
+ElbowPlot(ecpc, ndims = 50)
+```
+
+```{r}
+# Update seurat object 
+saveRDS(ecpc, "/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/ecpc_mt_updated.RDS")
+```
+
+
+
+
+

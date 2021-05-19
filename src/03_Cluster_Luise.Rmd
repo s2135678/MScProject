@@ -1,0 +1,32 @@
+---
+title: "03_Cluster_Luise"
+author: "Sera Choi"
+date: "19/05/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message=FALSE, warning=FALSE}
+# Load library
+library(Seurat)
+library(ggplot2)
+library(dplyr)
+library(SingleCellExperiment)
+library(scater)
+library(here)
+
+# Load data
+ecpc <- readRDS(here("data/processed/ecpc_mt_updated.RDS")) 
+```
+
+## Cluster cells 
+
+```{r}
+ecpc <- FindNeighbors(pbmc, dims = 1:25)
+
+
+pbmc <- FindClusters(pbmc, resolution = 0.5)
+```
