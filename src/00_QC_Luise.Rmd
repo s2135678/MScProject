@@ -24,29 +24,58 @@ library(here)
 
 # Load data
 ecpc <- readRDS(here("data/processed/ecpc.RDS")) 
-metadata <- ecpc@meta.data #metadata
 ```
 
 ### Proportion of mito transcript 
-When Luise QCed her dataset, she QCed spliced and unspliced genes separately using different mito threshold values. Then when the counts for unsplied and spliced were merged together, the mito percentage may have been summed. This script re-evaluates the mito gene percentage and plots the original and new. Re-calculated mito percentage appears to be lower- which is expected?  
+When Luise quality controlled the dataset, spliced and unspliced transcripts were QCed using different threshold values. Since no mito genes are present in unspliced, upper threshold for mito genes was set for only the spliced genes. Then counts for unspliced and spliced were combined. Therefore, the current values in 'percent.mt' reflect mito genes for only spliced genes. Here, I re-calculated the mito percentage and compared with the old. The mito percentage decreases because now, there are more non-mito genes (unspliced), reducing the proportion of mito genes present.   
+
+
 ```{r}
 ecpc[['percent.mt_new']]<- PercentageFeatureSet(ecpc, pattern = "^MT-")
 VlnPlot(ecpc, features = c("percent.mt", "percent.mt_new"), ncol = 2)
+
+# Update seurat object with re-calculated mito values 
+ecpc <- readRDS(here("data/processed/ecpc.RDS")) 
+ecpc[['percent.mt']]<- PercentageFeatureSet(ecpc, pattern = "^MT-")
+saveRDS(ecpc, "/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/ecpc_mt_updated.RDS")
+ecpc <- readRDS(here("data/processed/ecpc_mt_updated.RDS")) 
 ```
+
 
 ### QC plots 
-Here, I plotted violin plots to assess the number of unique genes per cell (nFeature_RNA), total number of molecules detected per cell (nCount_RNA) and proportion of mito genes per cell.
+QC aims to remove any low quality libraries. QC assesses:
 
-Luise's thresholds:
-* UMI count ()
+* number of expressed genes per cell (nFeature_RNA)
+* number of molecules per cell (nCount_RNA) - count depth 
+* proportion of mito genes per cell (percent.mt)
+
+Often cells with low count depth, few detected genes and high mito transcript represent dead or damaged cells. In contrast, high count depth and large number of detected genes represent doublets. Therefore, thresholds are set for:
+
+* lower and upper thresholds for number of expressed genes per cell (nFeature_RNA)
+* lower and upper thresholds for count depth (nCount_RNA)
+* upper thresholds for mito genes 
+
+Luise's thresholds are:
+
+* number of expressed genes: upper=8000, lower=10
+* number of molecules: upper=30000, lower= 100
+* mito genes upper: 23%
+
+Here, I plotted violin plot for three covariates and created a table showing min and max values for each covariate in the dataset. The minimum and maximum values in the dataset agrees with the thresholds. 
 
 ```{r}
-VlnPlot(ecpc, features = c("nFeature_RNA","nCount_RNA", "percent.mt_new"), ncol = 3)
-max(metadata$nFeature_RNA)
-min(metadata$nFeature_RNA)
-max(metadata$percent.mt_new)
-min(metadata$percent.mt_new)
+VlnPlot(ecpc, features = c("nFeature_RNA","nCount_RNA", "percent.mt"), ncol = 3)
+metadata <- ecpc@meta.data #metadata
+
+# Create table containing min and max values of count depth, expressed genes and mito %
+minimum <- c(min(metadata$nFeature_RNA), min(metadata$nCount_RNA), min(metadata$percent.mt))
+maximum <- c(max(metadata$nFeature_RNA), max(metadata$nCount_RNA), max(metadata$percent.mt))
+min_max_df <- data.frame(minimum, maximum)
+rownames(min_max_df) <- c("nFeature_RNA", "nCount_RNA", "percent.mito")
+min_max_df
+
 ```
+
 
 FeatureScater is used to visualise feature-feature relationships. Pearson correlation between two features is displayed at the top.
 
@@ -62,7 +91,7 @@ FeatureScater is used to visualise feature-feature relationships. Pearson correl
 * As total number of molcules in the cell increases, the number of unique gene increases at decreasing rate because 3 molecules of the same gene is just one gene. 
 
 ```{r, fig.width=10, fig.height=4, fig.fullwidth=TRUE}
-plot1 <- FeatureScatter(ecpc, feature1 = "nCount_RNA", feature2 = "percent.mt_new")
+plot1 <- FeatureScatter(ecpc, feature1 = "nCount_RNA", feature2 = "percent.mt")
 plot2 <- FeatureScatter(ecpc, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
 plot1 + plot2
 ```

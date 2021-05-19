@@ -1,0 +1,35 @@
+---
+title: "02_DimensionReduction_Luise"
+author: "Sera Choi"
+date: "19/05/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message=FALSE, warning=FALSE}
+# Load library
+library(Seurat)
+library(ggplot2)
+library(dplyr)
+library(SingleCellExperiment)
+library(scater)
+library(here)
+
+# Load data
+ecpc <- readRDS(here("data/processed/ecpc_mt_updated.RDS")) 
+```
+
+## Scaling data 
+After selecting top 2000 HVG, linear transformation ('scaling') is applied. In Seurat, the ScaleData function:
+* shifts expression of each gene so that mean expression across cells is 0
+* shifts expression of each gene so that the variance across cells is 1
+* results of this is stored in ecpc[["RNA"]]@scale.data 
+
+```{r}
+all.genes <- rownames(ecpc)
+ecpc <- ScaleData(ecpc, features = all.genes)
+```
+
