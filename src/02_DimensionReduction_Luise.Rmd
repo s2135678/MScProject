@@ -5,10 +5,6 @@ date: "19/05/2021"
 output: html_document
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
-
 ```{r, message=FALSE, warning=FALSE}
 # Load library
 library(Seurat)
@@ -22,36 +18,60 @@ library(here)
 ecpc <- readRDS(here("data/processed/ecpc_mt_updated.RDS")) 
 ```
 
-## Scaling data 
-After selecting top 2000 HVG, linear transformation ('scaling') is applied. In Seurat, the ScaleData function:
+# Scaling data 
+After selecting top 2000 HVGs, linear transformation ('scaling') is applied. In Seurat, the ScaleData() function:
+
 * shifts expression of each gene so that mean expression across cells is 0
 * shifts expression of each gene so that the variance across cells is 1
 * results of this is stored in ecpc[["RNA"]]@scale.data 
 
-```{r}
+Why do we scale the data- isn't mean of 0 and variance of 1 a normal distribution?
+
+```{r, message=FALSE}
 all.genes <- rownames(ecpc)
 ecpc <- ScaleData(ecpc, features = all.genes)
 ```
 
-## Linear Dimensional reduction
-Here, I performed PCA on scaled data. PCA is only run on top 2000 HVG identified during feature selection. Each PC is one dimension (a factor that gives variation to data) with mid-point of 0. So, If a gene has score of 0 at PC1, then the gene doesn't play any role in explaining variation on PC1. Further away from 0 (positive or negative), gene has sizable roles in explaining variation due to that PC. 
+# Linear Dimensional reduction (PCA)
+PCA was performed on the scaled data. In Seurat, PCA is run on top 2000 HVGs previously identified during feature selection. One PC captures variance across all cells, with top PCs capturing dominant factors that give rise to heterogeneity in the data. 
 
-```{r}
+When performing PCA, we assume that "biological processes affect multiple genes in a coordinated manner" (Bioconductor). Therefore, top PCs represent biological variation that cause correlated behaviour of many genes. In comparison, random technical noise tend to affect each gene independently and therefore is represented by later PCs. This is why we concentrate on top few PCs to retain in downstream analysis.   
+
+Below shows top 5 PCs with positive and negative scores reflecting the positive and negative correlation of genes with the PCs. If a gene has PC score = 0, the gene doesn't play any role in explaining variation on that particular PC. The output below only displays top 5 positive and negative genes per PC, but that list continues to include all 2000 genes (unless some genes have PC score = 0). 
+
+```{r, message=FALSE}
 ecpc <- RunPCA(ecpc, features= VariableFeatures(ecpc))
 print(ecpc[["pca"]], dims = 1:5, nfeatures = 5)
+```
+
+ The magnitude of scores reflects how much it correlates. 
+
+```{r}
 head(Embeddings(ecpc, reduction = "pca")[, 1:5])
 ```
 
-Here, I visualised top genes associated with reduction components. 
+# Visualising PCA
+
+Shows genes with highest score at PC1 and PC2. Some of genes in PC1 appear in top 10 HVGs. 
+
 ```{r, fig.width=10, fig.height=8, fig.fullwidth=TRUE}
 VizDimLoadings(ecpc, dims = 1:2, reduction = "pca")
-DimPlot(ecpc, reduction='pca')
 ```
-Here, I plotted heatmap of dimensional reduction, with cells on column and genes on row. Both cell and genes are sorted by their principcal component scores. Principal component score increases from negative (ELOVL7) to 0 to positive (PRKG1) as seen in visualisation above. Extreme cells are placed on the two ends on the plot. 
 
 ```{r}
-DimHeatmap(ecpc, dims = 1, cells = 500, balanced = TRUE)
+DimPlot(ecpc, reduction='pca')
 ```
+
+# PCA Heatmap
+
+Here, I plotted heatmap of dimensional reduction, with cells on column and genes on row. Both cells and genes are sorted by their principal component scores. Principal component score increases from negative (ELOVL7) to 0 to positive (PRKG1). Extreme cells are placed on the two ends on the plot. For each PC, genes with top positive and negative scores are plotted on row while, extreme cells are plotted on column.
+
+```{r}
+DimHeatmap(ecpc, dims = 1, cells = 10, balanced = TRUE)
+```
+
+Top PCs represent dominant factors that give rise to heterogeneity in the dataset. Therefore, at PC1, a distinct split can be seen of cells with up- and down-regulated expression of certain genes. However, with increasing PC, the split becomes less obvious... WHY?  
+
 ```{r, fig.width=10, fig.height=55, fig.fullwidth=TRUE}
 DimHeatmap(ecpc, dims = 1:20, cells = 500, balanced = TRUE)
 ```
