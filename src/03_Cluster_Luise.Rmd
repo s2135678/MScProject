@@ -5,28 +5,74 @@ date: "19/05/2021"
 output: html_document
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
-
 ```{r, message=FALSE, warning=FALSE}
 # Load library
 library(Seurat)
 library(ggplot2)
 library(dplyr)
 library(SingleCellExperiment)
-library(scater)
+library(scater) 
 library(here)
+library("scales")
+library(ggsci)
+library(gtools)
 
 # Load data
 ecpc <- readRDS(here("data/processed/ecpc_mt_updated.RDS")) 
 ```
 
-## Cluster cells 
+# Cluster cells 
+
+Clustering aims to define groups of cells with similar expression profile. Seurat uses graph-based approach where k-nearest neighbour graph (KNN) is built, with cells on nodes and connect with edges representing similarity between two cells. the FindNeighbors() function constructs KNN graph based on euclidean distance in PCA space and the edges are refined using Jaccard similarity. After building KNN graph, 'communities' of cells where cells in same community are more linked than cells in other communities. FindClusters() function performs this. This function applies modularity optimisation algorithm (successively finding communities within networks) such as Louvain (default) or SLM. 
+
+Seurat uses graph-based approach 
+
+```{r, message=FALSE}
+ecpc <- FindNeighbors(ecpc, dims = 1:25)
+# test different resolutions for clustering
+ecpc <- FindClusters(ecpc, resolution = c(0.01, 0.05, 
+                                        seq(from = 0.1, to = 1, by = 0.1)))
+# non-linear reduction
+ecpc <- RunUMAP(ecpc, dims = 1:25)
+```
 
 ```{r}
-ecpc <- FindNeighbors(pbmc, dims = 1:25)
-
-
-pbmc <- FindClusters(pbmc, resolution = 0.5)
+#Generate DimPlot of all tested clustering resolutions in metadata
+# requires gtools library and Seurat
+plot_list_func <- function(seur_obj,
+                           col_pattern,
+                           clust_lab = TRUE,
+                           label_size = 8,
+                           num_col = 4){
+  # finds column with additional resolution clusterings
+  extr_res_col <- grep(pattern = col_pattern, names(seur_obj@meta.data))
+  # obtain column names
+  res_names <- names(seur_obj@meta.data[extr_res_col])
+  
+  # gtools function, sorts gene_names alphanumeric:
+  res_names <- mixedsort(res_names) 
+  plot_l <-list()
+  
+  for(i in 1: length(res_names)){
+  dim_plot <- DimPlot(seur_obj, 
+                      reduction = "umap", 
+                      group.by = res_names[i],
+                      label = clust_lab,
+                      label.size = label_size) + NoLegend()
+  print(dim_plot)
+ }
+}
 ```
+
+Here, I tested clustering at different resolutions. Since there are small number of cells, low resolution appears to be 'sufficient'. I will first try identify ECs, pericytes and vasculature cells using resolution 0.2. After that, 0.3 could also be interesting. 
+
+```{r}
+plot_list_func(seur_obj = ecpc,
+               col_pattern = "RNA_snn_res.")
+```
+
+```{r}
+# Update seurat object 
+saveRDS(ecpc, "/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/ecpc_mt_updated.RDS")
+```
+
