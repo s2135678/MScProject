@@ -1,0 +1,250 @@
+---
+title: "04_annotation_Luise"
+author: "Sera Choi"
+date: "24/05/2021"
+output: html_document
+---
+
+```{r, message=FALSE, warning=FALSE}
+# Load library
+library(Seurat)
+library(ggplot2)
+library(dplyr)
+library(SingleCellExperiment)
+library(scater) 
+library(here)
+library("scales")
+library(ggsci)
+library(gtools)
+
+# Load data
+ecpc <- readRDS(here("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/ecpc03.RDS")) 
+```
+
+# Annotation at resolution = 0.2 
+In this section, three clusters at resolution 0.2 will be annotated by identifying genes that drive the separation between the clusters. 
+
+```{r, message=FALSE, warning=FALSE, eval=FALSE, fig.width=10, fig.height=5}
+ecpc <- FindNeighbors(ecpc, dims = 1:25)
+ecpc <- FindClusters(ecpc, resolution = 0.2 )
+ecpc <- RunUMAP(ecpc, dims = 1:25)
+ecpc <- RunTSNE(ecpc, dims= 1:25)
+
+umap_0.2 <- DimPlot(ecpc, 
+                    reduction = "umap", 
+                    label=TRUE, 
+                    label.size = 8) + NoLegend()
+
+tsne_0.2 <- DimPlot(ecpc, 
+                    reduction = "tsne", 
+                    label=TRUE, 
+                    label.size = 8) + NoLegend()
+
+multiplot(umap_0.2, tsne_0.2, cols=2)
+```
+
+# Gene Marker Identification
+
+Seurat uses function FindAllMarkers() to identify positive and negative gene markers of one cluster, compared to all other cells. So, if a gene in cluster 0 has avg.log2FC of 2.0 with highly significant adjusted p-value, then, cells in cluster 0 express the gene on average 2-fold more than cells in cluster 1 and 2.    
+
+* min.pct : if min.pct = 0.25, genes that are expressed in 25% of cells in either of the two populations are only tested. This reduces computational cost as irrelavant genes are not tested.
+* logfc.threshold : only those genes with average log X-fold difference between two groups of cells are tested.  
+* only positive gene markers are returned. 
+* By default, Wilcoxon Rank Sum test is used but here, I chose to use MAST because literatures have identified MAST to be best performing single-cell DE testing method. 
+
+```{r, message=FALSE}
+# Set cell identity class to clustering resolution 0.2
+Idents(ecpc) <- "RNA_snn_res.0.2"
+
+# Finds gene markers in each cluster compared to all other cells 
+ecpc.markers <- FindAllMarkers(ecpc, 
+                               only.pos = TRUE, 
+                               min.pct = 0.25, 
+                               logfc.threshold = 0.25,
+                               test.use = "MAST")
+```
+
+The results below show 10 gene markers for each cluster ordered with highest log2FC: 
+
+* unadjusted p-value 
+* log2 fold-change of average expression between two groups. Positive value indicates that cells in first group express the feature more 
+* pct1: percentage of cells that express the feature in group 1
+* pct2: percentage of cells that express the feature in group 2
+* adjusted p-value after Bonferroni correction 
+
+Since only positive gene markers are reported here, pct.1 > pct.2
+
+```{r, message=FALSE}
+top10_markers <- ecpc.markers %>% group_by(cluster) %>% top_n(n = 10, wt = avg_log2FC)
+top10_markers
+```
+
+# Feature plots with known markers  
+
+Here, I created feature plots for clusters 0, 1 and 2 using known markers (EC, pericytes and SMCs) and markers identified in DE analysis above (top 10 with highest log2FC). Gene markers for ECs and pericytes were found in literatures (Luise and 'Reconstruction of the human blood–brain barrier in vitro reveals a pathogenic mechanism of APOE4 in pericytes', 2020) :
+
+* Endothelial:CLDN5, VWF, FLT1, ANO2, ST6GALNAC3, ELOVL7 and ABCB1
+* Pericytes: PDGFRB, NOTCH3, PRKG1, LAMA2, GPC5, PDE7B, and DLC1
+* SMCs: MYH11, TAGLN, ACTA2, LPP and MYL9
+
+## Endothelial 
+
+* No distinct gene marker for this cluster
+* Scattered but expressed slightly more in cells in cluster 0
+
+```{r, fig.width= 15, fig.height= 13}
+FeaturePlot(ecpc, features= c("CLDN5", 
+                            "VWF", 
+                            "FLT1", 
+                            "ANO2", 
+                            "ST6GALNAC3", 
+                            "ELOVL7", 
+                            "ABCB1"))
+```
+
+## Pericyte
+
+* More concentrated than EC markers 
+* Highly expressed in cells in cluster 1
+
+```{r, fig.width= 15, fig.height= 13}
+FeaturePlot(ecpc, features= c("PDGFRB", 
+                              "NOTCH3", 
+                              "PRKG1", 
+                              "LAMA2", 
+                              "GPC5", 
+                              "PDE7B",
+                              "DLC1"))
+```
+
+## Smooth Muscle cell (vascular cells)
+
+* cells in sub-cluster of cluster 2 appears to express SMC related genes 
+* Maybe increase resolution to capture this? 
+
+```{r, fig.width= 15, fig.height= 13}
+FeaturePlot(ecpc, features= c("MYH11", 
+                              "TAGLN", 
+                              "ACTA2", 
+                              "LPP", 
+                              "MYL9"))
+```
+
+# Feature plots with identified markers 
+
+## Cluster 0 
+
+* No distinct gene marker for this cluster 
+* Known gene markers for ECs seen (ABCB1 and THSD4)
+
+
+```{r, fig.width= 15, fig.height= 13}
+# Cluster 0 annotation with 10 identified markers 
+clust0_markers <- top10_markers[1:10, 'gene']
+clust0_markers
+FeaturePlot(ecpc, features = c("ABCB1",
+                               "SLC39A10",
+                               "ATP10A",
+                               "SLC7A5",
+                               "GPCPD1",
+                               "CGNL1",
+                               "THSD4",
+                               "ST6GAL1",
+                               "STXBP6",
+                               "SPOCK3"))
+```
+
+## Cluster 1 gene marker 
+
+* Known pericyte markers seen (PRKG1, GPC5, DLC1)
+* genes related to SMCs also seen (TAGLN, ACRA2)
+
+```{r, fig.width= 15, fig.height= 13}
+# Cluster 1 top 10 gene markers 
+clust1_markers <- top10_markers[11:20, 'gene']
+FeaturePlot(ecpc, features = c("PRKG1",
+                               "GRM3",
+                               "GPC5",
+                               "SLC6A1",
+                               "INPP4B",
+                               "DLC1",
+                               "ATP1A2",
+                               "COLEC12",
+                               "ACTA2",
+                               "TAGLN"))
+```
+
+## Cluster 2 gene marker 
+
+* CXCL8 and SELE almost exclusively in cluster 2
+* CXCL8: Interleukin expressed by ECs. 
+* SELE: E-selectin expressed by ECs. 
+
+```{r, fig.width= 15, fig.height= 13}
+# Cluster 2 top 10 gene markers 
+clust2_markers <- top10_markers[21:30, 'gene']
+FeaturePlot(ecpc, features = c("CXCL8",
+                               "SELE",
+                               "ADAMTS9",
+                               "KCTD8",
+                               "COL4A1",
+                               "AKAP12",
+                               "MT2A",
+                               "PITPNC1",
+                               "TIMP1",
+                               "PLP1"))
+```
+
+# Number of cells per cluster 
+
+Significantly more cells from young samples in cluster 2.
+
+```{r}
+# Number of cells per cluster at resolution 0.2
+nCellsPerCluster <- table(Idents(ecpc))
+nCellsPerCluster
+```
+
+```{r}
+# Number of cells per cluster by age group
+nCellsAgePerCluster <- table(Idents(ecpc), ecpc$AgeGroup)
+nCellsAgePerCluster
+
+nCellsSamplePerCluster <- table(Idents(ecpc), ecpc$BBN)
+nCellsSamplePerCluster
+```
+
+
+
+## Visualise by Age Group, Gender and Samples
+
+Two samples 1.30841 and BBN14396 contribute most to cluster 2. 
+
+```{r}
+DimPlot(ecpc, reduction='umap',group.by = "AgeGroup")
+DimPlot(ecpc, reduction='umap',group.by = "gender")
+DimPlot(ecpc, reduction='umap',group.by = "BBN")
+```
+
+
+# Annotation at resolution = 0.25 and 0.3
+In this section, clusters at resolution 0.25 will be annotated by identifying genes that drive the separation between the clusters. 
+
+```{r, fig.width=10, fig.height=5, warning=FALSE, message=FALSE }
+
+ecpc <- FindNeighbors(ecpc, dims = 1:25)
+ecpc_0.25 <- FindClusters(ecpc, resolution = 0.25)
+ecpc_0.25 <- RunUMAP(ecpc_0.25, dims = 1:25)
+
+ecpc_0.3 <- FindClusters(ecpc, resolution = 0.3)
+ecpc_0.3 <- RunUMAP(ecpc_0.3, dims = 1:25)
+
+ecpc_0.25 <- DimPlot(ecpc_0.25, reduction = "umap", label=TRUE, label.size = 8) + NoLegend()
+ecpc_0.3 <- DimPlot(ecpc_0.3, reduction = "umap", label=TRUE, label.size = 8) + NoLegend()
+
+multiplot(ecpc_0.25, ecpc_0.3, cols=2)
+
+```
+
+
+

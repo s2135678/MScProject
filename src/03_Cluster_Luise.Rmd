@@ -18,7 +18,7 @@ library(ggsci)
 library(gtools)
 
 # Load data
-ecpc <- readRDS(here("data/processed/ecpc_mt_updated.RDS")) 
+ecpc <- readRDS(here("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/ecpc02.RDS")) 
 ```
 
 # Cluster cells 
@@ -27,7 +27,7 @@ Clustering aims to define groups of cells with similar expression profile. Seura
 
 Seurat uses graph-based approach 
 
-```{r, message=FALSE}
+```{r, message=FALSE, eval=FALSE}
 ecpc <- FindNeighbors(ecpc, dims = 1:25)
 # test different resolutions for clustering
 ecpc <- FindClusters(ecpc, resolution = c(0.01, 0.05, 
@@ -71,8 +71,9 @@ plot_list_func(seur_obj = ecpc,
                col_pattern = "RNA_snn_res.")
 ```
 
+
 ```{r}
 # Update seurat object 
-saveRDS(ecpc, "/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/ecpc_mt_updated.RDS")
+saveRDS(ecpc, "/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/ecpc03.RDS")
 ```
 

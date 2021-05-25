@@ -15,7 +15,7 @@ library(scater)
 library(here)
 
 # Load data
-ecpc <- readRDS(here("data/processed/ecpc_mt_updated.RDS")) 
+ecpc <- readRDS(here("data/processed/ecpc01.RDS")) 
 ```
 
 # Scaling data 
@@ -84,7 +84,7 @@ ElbowPlot(ecpc, ndims = 50)
 
 ```{r}
 # Update seurat object 
-saveRDS(ecpc, "/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/ecpc_mt_updated.RDS")
+saveRDS(ecpc, "/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/ecpc02.RDS")
 ```
 
 

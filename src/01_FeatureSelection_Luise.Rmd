@@ -21,7 +21,7 @@ library(here)
 library(scran)
 
 # Load data
-ecpc <- readRDS(here("data/processed/ecpc_mt_updated.RDS")) 
+ecpc <- readRDS(here("data/processed/ecpc00.RDS")) 
 ```
 
 ## Visualisation
@@ -55,7 +55,7 @@ plot2 <- LabelPoints(plot = plot1, points = top10, repel = TRUE)
 plot1 + plot2
 
 # Update Seurat object 
-saveRDS(ecpc, "/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/ecpc_mt_updated.RDS")
+saveRDS(ecpc, "/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/ecpc01.RDS")
 ```
 
 ## Feature Selection with Scran 

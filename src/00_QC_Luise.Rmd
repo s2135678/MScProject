@@ -37,7 +37,7 @@ VlnPlot(ecpc, features = c("percent.mt", "percent.mt_new"), ncol = 2)
 # Update seurat object with re-calculated mito values 
 ecpc <- readRDS(here("data/processed/ecpc.RDS")) 
 ecpc[['percent.mt']]<- PercentageFeatureSet(ecpc, pattern = "^MT-")
-saveRDS(ecpc, "/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/ecpc_mt_updated.RDS")
+saveRDS(ecpc, "/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/ecpc00.RDS")
 ecpc <- readRDS(here("data/processed/ecpc_mt_updated.RDS")) 
 ```
 
@@ -96,5 +96,13 @@ plot2 <- FeatureScatter(ecpc, feature1 = "nCount_RNA", feature2 = "nFeature_RNA"
 plot1 + plot2
 ```
 
+# Plot by age group
+
+```{r}
+VlnPlot(ecpc, 
+        features = c("nFeature_RNA","nCount_RNA", "percent.mt"), 
+        ncol = 3, 
+        group.by = 'AgeGroup')
+```
 
 
