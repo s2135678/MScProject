@@ -24,23 +24,10 @@ ecpc <- readRDS(here("/Users/serachoi/Documents/Edinburgh/MScProject/Project/dat
 # Annotation at resolution = 0.2 
 In this section, three clusters at resolution 0.2 will be annotated by identifying genes that drive the separation between the clusters. 
 
-```{r, message=FALSE, warning=FALSE, eval=FALSE, fig.width=10, fig.height=5}
-ecpc <- FindNeighbors(ecpc, dims = 1:25)
-ecpc <- FindClusters(ecpc, resolution = 0.2 )
-ecpc <- RunUMAP(ecpc, dims = 1:25)
-ecpc <- RunTSNE(ecpc, dims= 1:25)
-
-umap_0.2 <- DimPlot(ecpc, 
-                    reduction = "umap", 
-                    label=TRUE, 
-                    label.size = 8) + NoLegend()
-
-tsne_0.2 <- DimPlot(ecpc, 
-                    reduction = "tsne", 
-                    label=TRUE, 
-                    label.size = 8) + NoLegend()
-
-multiplot(umap_0.2, tsne_0.2, cols=2)
+```{r, message=FALSE, warning=FALSE}
+ecpc_0.2 <- FindClusters(ecpc, resolution = 0.2 )
+ecpc_0.2 <- RunUMAP(ecpc_0.2, dims = 1:25)
+DimPlot(ecpc_0.2, reduction = "umap", label=TRUE, label.size = 8) + NoLegend()
 ```
 
 # Gene Marker Identification
@@ -54,10 +41,10 @@ Seurat uses function FindAllMarkers() to identify positive and negative gene mar
 
 ```{r, message=FALSE}
 # Set cell identity class to clustering resolution 0.2
-Idents(ecpc) <- "RNA_snn_res.0.2"
+Idents(ecpc_0.2) <- "RNA_snn_res.0.2"
 
 # Finds gene markers in each cluster compared to all other cells 
-ecpc.markers <- FindAllMarkers(ecpc, 
+ecpc_0.2.markers <- FindAllMarkers(ecpc_0.2, 
                                only.pos = TRUE, 
                                min.pct = 0.25, 
                                logfc.threshold = 0.25,
@@ -75,8 +62,8 @@ The results below show 10 gene markers for each cluster ordered with highest log
 Since only positive gene markers are reported here, pct.1 > pct.2
 
 ```{r, message=FALSE}
-top10_markers <- ecpc.markers %>% group_by(cluster) %>% top_n(n = 10, wt = avg_log2FC)
-top10_markers
+top10_markers_0.2 <- ecpc_0.2.markers %>% group_by(cluster) %>% top_n(n = 10, wt = avg_log2FC)
+top10_markers_0.2
 ```
 
 # Feature plots with known markers  
@@ -94,12 +81,12 @@ Here, I created feature plots for clusters 0, 1 and 2 using known markers (EC, p
 
 ```{r, fig.width= 15, fig.height= 13}
 FeaturePlot(ecpc, features= c("CLDN5", 
-                            "VWF", 
-                            "FLT1", 
-                            "ANO2", 
-                            "ST6GALNAC3", 
-                            "ELOVL7", 
-                            "ABCB1"))
+                               "VWF", 
+                               "FLT1", 
+                               "ANO2", 
+                               "ST6GALNAC3", 
+                               "ELOVL7", 
+                               "ABCB1"))
 ```
 
 ## Pericyte
@@ -132,46 +119,44 @@ FeaturePlot(ecpc, features= c("MYH11",
 
 # Feature plots with identified markers 
 
+Here I created feature plots for cluster 0, 1 and 2 using 10 identified gene markers from DE analysis (top 10 logFC). I am mostly interested in identifying cluster 2 because cluster 2 was neither ECs, pericytes or SMCs. 
+
 ## Cluster 0 
 
 * No distinct gene marker for this cluster 
-* Known gene markers for ECs seen (ABCB1 and THSD4)
+* Known gene markers for ECs seen (ABCB1 and THSD4): further confirms that cluster 0 is ECs
+
+```{r}
+# This function takes result from DE analysis and creates feature plots 
+DEG_feature_plot_func <- function(seur_object,
+                                  markers){
+  
+  # Converts data.frame into string of DEGs
+  gene.markers <- as.character(as.matrix(markers))
+  
+  # Create feature plot using makers 
+  feat_plot <- FeaturePlot(seur_object, 
+                           features = c(gene.markers))
+  print(feat_plot)
+}
+```
 
 
 ```{r, fig.width= 15, fig.height= 13}
 # Cluster 0 annotation with 10 identified markers 
-clust0_markers <- top10_markers[1:10, 'gene']
-clust0_markers
-FeaturePlot(ecpc, features = c("ABCB1",
-                               "SLC39A10",
-                               "ATP10A",
-                               "SLC7A5",
-                               "GPCPD1",
-                               "CGNL1",
-                               "THSD4",
-                               "ST6GAL1",
-                               "STXBP6",
-                               "SPOCK3"))
+clust0_markers_0.2 <- top10_markers_0.2[1:10, 'gene']
+DEG_feature_plot_func(ecpc_0.2, clust0_markers_0.2)
 ```
 
 ## Cluster 1 gene marker 
 
 * Known pericyte markers seen (PRKG1, GPC5, DLC1)
-* genes related to SMCs also seen (TAGLN, ACRA2)
+* genes related to SMCs also seen (TAGLN, ACRA2) 
 
 ```{r, fig.width= 15, fig.height= 13}
 # Cluster 1 top 10 gene markers 
-clust1_markers <- top10_markers[11:20, 'gene']
-FeaturePlot(ecpc, features = c("PRKG1",
-                               "GRM3",
-                               "GPC5",
-                               "SLC6A1",
-                               "INPP4B",
-                               "DLC1",
-                               "ATP1A2",
-                               "COLEC12",
-                               "ACTA2",
-                               "TAGLN"))
+clust1_markers_0.2 <- top10_markers_0.2[11:20, 'gene']
+DEG_feature_plot_func(ecpc_0.2, clust1_markers_0.2)
 ```
 
 ## Cluster 2 gene marker 
@@ -182,43 +167,32 @@ FeaturePlot(ecpc, features = c("PRKG1",
 
 ```{r, fig.width= 15, fig.height= 13}
 # Cluster 2 top 10 gene markers 
-clust2_markers <- top10_markers[21:30, 'gene']
-FeaturePlot(ecpc, features = c("CXCL8",
-                               "SELE",
-                               "ADAMTS9",
-                               "KCTD8",
-                               "COL4A1",
-                               "AKAP12",
-                               "MT2A",
-                               "PITPNC1",
-                               "TIMP1",
-                               "PLP1"))
+clust2_markers_0.2 <- top10_markers_0.2[21:30, 'gene']
+DEG_feature_plot_func(ecpc_0.2, clust2_markers_0.2)
 ```
 
 # Number of cells per cluster 
 
-Significantly more cells from young samples in cluster 2.
+Significantly more cells from young samples in cluster 2. When we want to investigate whether the cells are clustering by technical reasons (age, gender, sameples), we look at sample level. There is no cause of concern since we have so little cells and those cells in clsuter 2 are interesting, continue. 
 
 ```{r}
 # Number of cells per cluster at resolution 0.2
-nCellsPerCluster <- table(Idents(ecpc))
+nCellsPerCluster <- table(Idents(ecpc_0.2))
 nCellsPerCluster
 ```
 
 ```{r}
 # Number of cells per cluster by age group
-nCellsAgePerCluster <- table(Idents(ecpc), ecpc$AgeGroup)
+nCellsAgePerCluster <- table(Idents(ecpc_0.2), ecpc_0.2$AgeGroup)
 nCellsAgePerCluster
 
-nCellsSamplePerCluster <- table(Idents(ecpc), ecpc$BBN)
+nCellsSamplePerCluster <- table(Idents(ecpc_0.2), ecpc_0.2$BBN)
 nCellsSamplePerCluster
 ```
 
-
-
 ## Visualise by Age Group, Gender and Samples
 
-Two samples 1.30841 and BBN14396 contribute most to cluster 2. 
+Two samples 1.30841 and BBN14396 contribute most to cluster 2- but again, not an issue.  
 
 ```{r}
 DimPlot(ecpc, reduction='umap',group.by = "AgeGroup")
@@ -226,25 +200,164 @@ DimPlot(ecpc, reduction='umap',group.by = "gender")
 DimPlot(ecpc, reduction='umap',group.by = "BBN")
 ```
 
+# Resolution = 0.25 and 0.3
 
-# Annotation at resolution = 0.25 and 0.3
-In this section, clusters at resolution 0.25 will be annotated by identifying genes that drive the separation between the clusters. 
+Resolution 0.25 identifies 4th cluster, which are the SMCs. At resolution 0.3, another sub-population of ECs appear in EC population, which seem quite interesting. So, I follow onto identify those sub-clusters. 
 
 ```{r, fig.width=10, fig.height=5, warning=FALSE, message=FALSE }
 
-ecpc <- FindNeighbors(ecpc, dims = 1:25)
 ecpc_0.25 <- FindClusters(ecpc, resolution = 0.25)
 ecpc_0.25 <- RunUMAP(ecpc_0.25, dims = 1:25)
 
 ecpc_0.3 <- FindClusters(ecpc, resolution = 0.3)
 ecpc_0.3 <- RunUMAP(ecpc_0.3, dims = 1:25)
 
-ecpc_0.25 <- DimPlot(ecpc_0.25, reduction = "umap", label=TRUE, label.size = 8) + NoLegend()
-ecpc_0.3 <- DimPlot(ecpc_0.3, reduction = "umap", label=TRUE, label.size = 8) + NoLegend()
+ecpc_0.25_plot <- DimPlot(ecpc_0.25, 
+                          reduction = "umap", 
+                          label=TRUE, 
+                          label.size = 8) + NoLegend()
 
-multiplot(ecpc_0.25, ecpc_0.3, cols=2)
+ecpc_0.3_plot <- DimPlot(ecpc_0.3, 
+                         reduction = "umap", 
+                         label=TRUE, 
+                         label.size = 8) + NoLegend()
 
+multiplot(ecpc_0.25_plot, ecpc_0.3_plot, cols=2)
+```
+
+# Annotation at resolution = 0.3 
+
+Here, I attempt to identify the two sub-clusters in endothelial population. It may be that those sub-clusters belong to different vessel types- arteriolar and venular ECs. Therefore, first I tried to identify using known arteriolar and venular gene markers. However, not many human gene markers are known (many mice and zebra fish). Few were taken from Arterial versus venous endothelial cells (2014).
+
+* Arterial ECs: HEY2, GJA4, 
+* Venous ECs: NR2F2, EMCN 
+
+Another study that compared coronary artery and aortic ECs against umbilical vein ECs (Identification of endothelial cell genes by combined database mining and microarray analysis, 2013) has noted that:
+
+* Arterial ECs have over-expression of thrombomodulin and aldo-keto reductase family member 3
+* Venular ECs have over-expression of matrix metalloprotease 10, integrins and adhesion proteins. 
+
+It would also be interesting to know whether the expression profile of pericytes also differ with vessel types at resolution 0.5 where pericyte population also divides into two. 
+
+## Feature plot with known markers 
+
+Arterivenous differentiation occurs during embryonic development and differentiation of angioblasts leads to formation of network of arteries, veins and capillaries. Notch signalling pathway appears to have importance in deciding the cell fate. Several genes in nothch pathway are up-regulated in arterial ECs than venous ECs. Hey2 is a downstream target of Notch signalling exclusively expressed in arterial ECs, while COUP-TFII (NR2F2) is exclusively expressed in venous ECs (Impact of Hey2 and COUP-TFII on genes involved in arteriovenous differentiation in primary human arterial and venous endothelial cells, 2013). 
+
+### Artery 
+
+No distinct clusters express arterial gene markers. Interestingly, pericytes are expressing more arterial gene markers than cells in EC population. Expression of HEY2 is increased with Notch signal pathway. Maybe HEY2 is required during angiogenesis but for fully differenciated arterial ECs, HEY2 isn't expressed. Potentially, the same for GJA4. 
+
+```{r,fig.width=10, fig.height=5}
+Idents(ecpc_0.3) <- "RNA_snn_res.0.3"
+FeaturePlot(ecpc_0.3, features = c("HEY2", "GJA4"))
+```
+
+#### Notch3 communication between ECs and pericytes 
+
+It could be that pericytes are expressing HEY2 because of communication between ECs and pericytes. DLL4 is a Notch ligand expressed by ECs. DLL4 binds to NOTCH3 receptors on pericytes, which increases downstream genes, HEY2 and HEYL. Enhanced Notch3 signalling in pericytes enhanced adhesion strength of pericytes to ECs and decreased migratory ability.  This study was down in human brain pericytes. (Cerebral Cavernous Malformation-1 Protein Controls DLL4-Notch3 Signaling Between the Endothelium and Pericytes, 2015).
+
+So, perhaps HEY2 expression isn't sustained after fully differentiating and the expression of HEY2 in pericyte is to do with communication between pericytes and ECs. 
+
+```{r,fig.width=10, fig.height=6}
+FeaturePlot(ecpc, feature= c("DLL4",
+                             "NOTCH3",
+                             "HEY2",
+                             "HEYL"))
 ```
 
 
+### Vein
 
+NR2F2 (COUP-TFII) is a well-known venous EC marker during angiogenesis. However, again it is expressed in pericyte population more than EC population. This may be because NR2F2 level is no longer sustained after differentiation. I think NR2F2 is involved in communication with ECs. 
+
+```{r,fig.width=10, fig.height=5}
+FeaturePlot(ecpc_0.3, features = c('NR2F2', 'EMCN'))
+```
+
+#### Communication between Pericyte and ECs
+
+NR2F2 is expressed by pericytes, which increases expression of ANGPT1 (paracrine ligand specific for endothelium-specific tyrosine kinase receptor TEK). (The role of the orphan nuclear receptor COUP-TFII in tumorigenesis, 2015).  
+
+```{r,fig.width=10, fig.height=6}
+FeaturePlot(ecpc, feature=c("NR2F2",
+                            "ANGPT1",
+                            "TEK"))
+```
+
+# Pairwise comparison of cluster 1 and 2
+
+Cluster annotation using known gene markers was unsuccessful, so I performed pair-wise comparison of cluster 1 and 2 to find DEGs. 
+
+## Cluster 1
+
+```{r, fig.width= 15, fig.height= 13, message=FALSE}
+Idents(ecpc_0.3) <- "RNA_snn_res.0.3"
+
+clust1_markers_0.3 <- FindMarkers(ecpc_0.3, 
+                                  ident.1 = 1, 
+                                  ident.2 = 2, 
+                                  only.pos = TRUE,
+                                  min.pct = 0.25,
+                                  logfc.threshold = 0.25,
+                                  test.use = "MAST")
+
+# Order DEGs by average log2FC
+clust1_markers_0.3 <- clust1_markers_0.3[order(clust1_markers_0.3$avg_log2FC),]
+
+# Top 10 DEGs
+top10_clust1_markers_0.3 <- rownames(clust1_markers_0.3[1:10,])
+
+# Create feature plot using top 10 DEGs
+DEG_feature_plot_func(ecpc_0.3, top10_clust1_markers_0.3)
+```
+
+## Cluster 2
+
+```{r, fig.width= 15, fig.height= 13, message=FALSE}
+
+clust2_markers_0.3 <- FindMarkers(ecpc_0.3, 
+                                  ident.1 = 2, 
+                                  ident.2 = 1, 
+                                  only.pos = TRUE,
+                                  min.pct = 0.25,
+                                  logfc.threshold = 0.25,
+                                  test.use = "MAST")
+
+# Order DEGs by average log2FC
+clust2_markers_0.3 <- clust2_markers_0.3[order(clust2_markers_0.3$avg_log2FC),]
+
+# Top 10 DEGs
+top10_clust2_markers_0.3 <- rownames(clust2_markers_0.3[1:10,])
+
+# Create feature plot using top 10 DEGs
+DEG_feature_plot_func(ecpc_0.3, top10_clust2_markers_0.3)
+
+```
+
+# Feature Plot with UMI and gene counts 
+
+No clear genes that differentiate cluster 1 and 2 of EC population could be identified. To check whether the cells are clustering due to quality, I created feature plots using UMI and gene counts. 
+
+It appears that the clustering in EC and pericyte population is due to quality. 
+
+```{r,fig.width=10, fig.height=5}
+FeaturePlot(ecpc, features = c("nFeature_RNA", "nCount_RNA"))
+```
+
+
+# Annotate population 
+
+Since sub-clusters in EC population is due to quality, clusters will be annotated at resolution 0.25. 
+
+```{r}
+new.cluster.ids <- c("Endothelial_1", "Pericyte", "Endothelial_2", "SMC")
+names(new.cluster.ids) <- levels(ecpc_0.25)
+ecpc_0.25 <- RenameIdents(ecpc_0.25, new.cluster.ids)
+DimPlot(ecpc_0.25, reduction = "umap", label = TRUE, label.size = 8) + NoLegend()
+```
+
+
+```{r}
+# Save annotated RDS 
+saveRDS(ecpc_0.25, "/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/ecpc04.RDS")
+```

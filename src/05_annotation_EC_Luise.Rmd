@@ -1,0 +1,256 @@
+---
+title: "05_annotation_EC_Luise"
+author: "Sera Choi"
+date: "27/05/2021"
+output: html_document
+---
+
+```{r, message=FALSE, warning=FALSE}
+# Load library
+library(Seurat)
+library(ggplot2)
+library(dplyr)
+library(SingleCellExperiment)
+library(scater) 
+library(here)
+library("scales")
+library(ggsci)
+library(gtools)
+
+# Load data
+ecpc <- readRDS(here("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/ecpc04.RDS")) 
+```
+
+# Identification of Arterial, Venous and Capillary ECs
+
+Previous clustering of Endothelial_Pericyte cells at resolution 0.3 identified sub-clusters within EC population. However, it also appeared that the sub-clustering in EC and pericyte population were due to quality and no clustering due to vessel type was observed. To validate, this section attempts to identify sub-clusters within EC population using vessel-type gene markers and DE analysis. After validation, cluster identity of Endothelial-2 will be explored. 
+
+## Subset for ECs only. 
+
+After subsetting for ECs only, the dataset contains 573 cells. 
+
+```{r}
+# Subset for ECs only
+ec <- subset(ecpc, ident=c("Endothelial_1", "Endothelial_2"))
+```
+
+## Feature Selection
+```{r, message=FALSE, warning=FALSE}
+ec <- FindVariableFeatures(ec, selection.method = "vst", nfeatures=2000)
+```
+
+## Scale Data
+```{r, message=FALSE, warning=FALSE}
+all.genes <- rownames(ec)
+ec <- ScaleData(ec, features = all.genes)
+```
+ 
+## Dimensionality Reduction 
+
+PC 25 chosen as the threshold 
+```{r, message=FALSE, warning=FALSE}
+ec <- RunPCA(ec, features= VariableFeatures(ec))
+print(ec[["pca"]], dims = 1:5, nfeatures = 5)
+DimPlot(ec, reduction='pca')
+ElbowPlot(ecpc, ndims = 50)
+```
+
+## Clustering at different resolutions 
+
+```{r, message=FALSE, warning=FALSE}
+ec <- FindNeighbors(ec, dims = 1:25)
+# test different resolutions for clustering
+ec <- FindClusters(ec, resolution = c(seq(from = 0.1, to = 1, by = 0.05)))
+ec <- RunUMAP(ec, dims = 1:25)
+```
+
+```{r, message=FALSE, warning=FALSE}
+#Generate DimPlot of all tested clustering resolutions in metadata
+# requires gtools library and Seurat
+plot_list_func <- function(seur_obj,
+                           col_pattern,
+                           clust_lab = TRUE,
+                           label_size = 8,
+                           num_col = 4){
+  # finds column with additional resolution clusterings
+  extr_res_col <- grep(pattern = col_pattern, names(seur_obj@meta.data))
+  # obtain column names
+  res_names <- names(seur_obj@meta.data[extr_res_col])
+  
+  # gtools function, sorts gene_names alphanumeric:
+  res_names <- mixedsort(res_names) 
+  plot_l <-list()
+  
+  for(i in 1: length(res_names)){
+  dim_plot <- DimPlot(seur_obj, 
+                      reduction = "umap", 
+                      group.by = res_names[i],
+                      label = clust_lab,
+                      label.size = label_size) + NoLegend()
+  print(dim_plot)
+ }
+}
+```
+
+```{r, message=FALSE, warning=FALSE}
+plot_list_func(seur_obj = ec,
+               col_pattern = "RNA_snn_res.")
+```
+
+# Feature Plot with vessel-specific gene markers 
+
+To begin with, I chose resolution 0.3, which shows 3 clusters. I created feature plots using known vessel-specific gene markers.
+
+* Arterial ECs: HEY2, GJA4
+* Venous ECs: NR2F2, EMCN 
+
+## Arterial markers 
+
+No clear distinction.
+
+```{r, fig.width=10, fig.height=5}
+FeaturePlot(ec, features= c("HEY2", "GJA4"))
+```
+
+## Venous markers 
+
+No clear distinction. 
+
+```{r, fig.width=10, fig.height=5}
+FeaturePlot(ec, features= c("NR2F2", "EMCN"))
+```
+
+# DE analysis 
+
+CLusters could not be identified using known markers of vessel types. Therefore, I performed DE analysis 
+
+```{r, message=FALSE}
+# Set cell identity class to clustering resolution 0.3
+Idents(ec) <- "RNA_snn_res.0.3"
+
+# Finds gene markers in each cluster compared to all other cells 
+ec.markers <- FindAllMarkers(ec, 
+                             only.pos = TRUE, 
+                             min.pct = 0.25, 
+                             logfc.threshold = 0.25,
+                             test.use = "MAST")
+```
+
+```{r, message=FALSE}
+top10_markers <- ec.markers %>% group_by(cluster) %>% top_n(n = 10, wt = avg_log2FC)
+top10_markers 
+```
+
+
+```{r}
+DEG_feature_plot_func <- function(seur_object,
+                                  markers){
+  
+  # Converts data.frame into string of DEGs
+  gene.markers <- as.character(as.matrix(markers))
+  
+  # Create feature plot using makers 
+  feat_plot <- FeaturePlot(seur_object, 
+                           features = c(gene.markers))
+  print(feat_plot)
+}
+```
+
+# Cluster 0
+
+No clear gene markers. 
+
+```{r,fig.width= 15, fig.height= 13}
+clust0_markers <- top10_markers[1:10, 'gene']
+DEG_feature_plot_func(ec, clust0_markers)
+```
+
+# Cluster 1
+
+No clear gene markers. 
+
+```{r,fig.width= 15, fig.height= 13}
+clust1_markers <- top10_markers[11:20, 'gene']
+DEG_feature_plot_func(ec, clust1_markers)
+```
+
+### Feature Plot with UMI and gene count 
+
+In agreement with last analysis, cluster 0 and 1 appear to be clustering due to quality. 
+
+```{r,fig.width=10, fig.height=5}
+FeaturePlot(ec, features = c("nFeature_RNA", "nCount_RNA"))
+```
+
+# Cluster 2
+
+Cluster 2 is interesting. Here I tried to identify Cluster 2. 
+
+* ADAMTS9: A disintegrin and metalloproteinase with thrombospondin motifs 9
+* COL4A1: Collagen, type IV, alpha 1
+* ELL2: 
+* TIMP1 : Metalloproteinase inhibitor 1
+* CXCL8: Interleukin 
+* SELE: E-selectin 
+
+```{r,fig.width= 15, fig.height= 13}
+clust2_markers <- top10_markers[21:30, 'gene']
+DEG_feature_plot_func(ec, clust2_markers)
+```
+
+# Pair-wise comparison of cluster 0 and 1
+
+## Cluster 0
+
+Should resemble cluster 2 markers from ecpc 
+
+```{r, fig.width= 15, fig.height= 13, message=FALSE}
+
+clust0_markers <- FindMarkers(ec, 
+                                  ident.1 = 0, 
+                                  ident.2 = 1, 
+                                  only.pos = TRUE,
+                                  min.pct = 0.25,
+                                  logfc.threshold = 0.25,
+                                  test.use = "MAST")
+
+# Order DEGs by average log2FC
+clust0_markers <- clust0_markers[order(clust0_markers$avg_log2FC),]
+
+# Top 10 DEGs
+top10_clust0_markers <- rownames(clust0_markers[1:10,])
+
+# Create feature plot using top 10 DEGs
+DEG_feature_plot_func(ec, top10_clust0_markers)
+
+```
+
+## Cluster 1
+
+Should resemble cluster 1 markers from ecpc 
+
+```{r, fig.width= 15, fig.height= 13, message=FALSE}
+
+clust1_markers <- FindMarkers(ec, 
+                                  ident.1 = 1, 
+                                  ident.2 = 0, 
+                                  only.pos = TRUE,
+                                  min.pct = 0.25,
+                                  logfc.threshold = 0.25,
+                                  test.use = "MAST")
+
+# Order DEGs by average log2FC
+clust1_markers <- clust1_markers[order(clust1_markers$avg_log2FC),]
+
+# Top 10 DEGs
+top10_clust1_markers <- rownames(clust1_markers[1:10,])
+
+# Create feature plot using top 10 DEGs
+DEG_feature_plot_func(ec, top10_clust1_markers)
+
+```
+
+
+
+
+

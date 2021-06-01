@@ -27,7 +27,7 @@ Clustering aims to define groups of cells with similar expression profile. Seura
 
 Seurat uses graph-based approach 
 
-```{r, message=FALSE, eval=FALSE}
+```{r, message=FALSE}
 ecpc <- FindNeighbors(ecpc, dims = 1:25)
 # test different resolutions for clustering
 ecpc <- FindClusters(ecpc, resolution = c(0.01, 0.05, 
