@@ -1,0 +1,263 @@
+---
+title: "06_Luise_SVD"
+author: "Sera Choi"
+date: "08/06/2021"
+output: html_document
+---
+
+```{r, message=FALSE, warning=FALSE}
+# Load library
+library(Seurat)
+library(ggplot2)
+library(dplyr)
+library(SingleCellExperiment)
+library(here)
+library(ggsci)
+library(gtools)
+library(Matrix)
+library(future)
+
+# Set maximum size of the object 
+options(future.global.maxSize = 16000*1024^2)
+```
+
+# SVD dataset
+
+In the previous analysis, cluster 2 could not be identified as 50% of cells in cluster 2 belonged to an individual whose death was unknown. However, DEGs indicate that the cells in cluster 2 may be inflammed or damanged. So, here I tried to integrate cells from individuals who were diagnosed with SVD/neurodisease to see if those cells integrate with cluster 2.
+
+Data (GSE157827) contains patients with Alzheimer's disesase and 4 individuals with:
+
+* NC3: microinfact in putamen
+* NC16: mild Cerebral amyloid angiopathy
+* NC18: mild Cerebral amyloid angiopathy
+* NC17: mild SVD
+
+## Load data
+```{r}
+svd <- readRDS("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/svd.RDS")
+```
+
+## Quality Control
+
+The study removed nuclei with:
+
+* nFeatures_RNA (gene) < 200
+* nCount_RNA (library size) > 20,000
+* percent.mt > 20%
+
+I followed their QC thresholds. 
+NC16 appears to have high mito percentage and low library size compared to other samples. But since I know each sample contains very little endothelial cells, I decided to keep NC16 for now.  
+
+```{r,fig.width= 10, fig.height= 8}
+svd[["percent.mt"]] <- PercentageFeatureSet(svd, pattern = "^MT-")
+metadata <- svd@meta.data
+VlnPlot(svd, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size = FALSE)
+plot1 <- FeatureScatter(svd, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot2 <- FeatureScatter(svd, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+plot1 + plot2
+
+
+# Remove low-quality cells 
+svd <- subset(svd, subset = nFeature_RNA > 200 & nFeature_RNA < 20000 & percent.mt < 20)
+
+VlnPlot(svd, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size = FALSE)
+plot1 <- FeatureScatter(svd, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot2 <- FeatureScatter(svd, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+plot1 + plot2
+
+```
+
+## Normalisation
+
+The study simple used Seurat basic normalisation method. 
+
+```{r}
+svd <- NormalizeData(svd, normalization.method = "LogNormalize", scale.factor = 10000)
+svd <- NormalizeData(svd)
+```
+
+## Feature Selection and Scaling 
+```{r, message=FALSE}
+svd <- FindVariableFeatures(svd, selection.method = "vst", nfeatures = 2000)
+all.genes <- rownames(svd)
+svd <- ScaleData(svd, features = all.genes)
+```
+
+## Linear Dimensional reduction 
+```{r, message=FALSE}
+svd <- RunPCA(svd, features = VariableFeatures(object = svd))
+DimPlot(svd, reduction = "pca")
+ElbowPlot(svd, ndims = 50)
+```
+
+## Visualisation
+
+The study used 20 PCs and cluster resolution = 1. 
+Shows clustering due to sample differences. So integration is required. 
+
+```{r, message=FALSE, warning=FALSE}
+svd <- RunUMAP(svd, dims = 1:20)
+DimPlot(svd, reduction='umap',group.by = "orig.ident")
+```
+
+## Integration
+
+After integration, batch effect disappears and UMAP representation resembles that in the study. 
+
+```{r, message=FALSE, warning=FALSE}
+# Split Seurat object into 4 objects corresponding to each sample 
+svd.list <- SplitObject(svd, split.by = "orig.ident")
+
+# Normalise and identify HVGs for each dataset independently
+svd.list <- lapply(X = svd.list, FUN = function(x) {
+    x <- NormalizeData(x)
+    x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 2000)
+})
+
+# select features that are repeatedly variable across datasets for integration
+features <- SelectIntegrationFeatures(object.list = svd.list)
+svd.anchors <- FindIntegrationAnchors(object.list = svd.list, anchor.features = features, dims = 1:20)
+svd.combined <- IntegrateData(anchorset = svd.anchors, dims=1:20)
+
+DefaultAssay(svd.combined) <- "integrated"
+
+# Run the standard workflow for visualization and clustering
+# Feature Selection and Scaling 
+svd.combined <- FindVariableFeatures(svd.combined, selection.method = "vst", nfeatures = 2000)
+all.genes <- rownames(svd.combined)
+svd.combined <- ScaleData(svd.combined, features = all.genes)
+
+# Linear dimensional reduction 
+svd.combined <- RunPCA(svd.combined, features = VariableFeatures(object = svd.combined))
+ElbowPlot(svd.combined, ndims = 50)
+
+# Visualisation
+svd.combined <- RunUMAP(svd.combined, dims = 1:20)
+DimPlot(svd.combined, reduction = "umap", group.by = "orig.ident")
+```
+
+At resolution 0.1, cluster 12 appears to express EC markers. I used EC markers the study used to identify endothelial cells. 
+
+```{r, fig.width= 15, fig.height= 13}
+FeaturePlot(svd.combined, features= c("CLDN5",
+                                      "FLT1",
+                                      "ABCB1"))
+
+```
+
+## Subset Endo population 
+
+```{r}
+Idents(svd.combined) <- "RNA_snn_res.0.1"
+svd_ec <- subset(svd.combined, ident=12)
+saveRDS(svd_ec, "/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/svd_ec.RDS")
+```
+
+## Feature Selection and Scaling 
+```{r, message=FALSE}
+svd_ec <- readRDS(here("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/svd_ec.RDS")) 
+svd_ec <- FindVariableFeatures(svd_ec, selection.method = "vst", nfeatures = 2000)
+all.genes <- rownames(svd_ec)
+svd_ec <- ScaleData(svd_ec, features = all.genes)
+```
+
+## Linear Dimensional reduction 
+```{r, message=FALSE}
+svd_ec <- RunPCA(svd_ec, features = VariableFeatures(object = svd_ec))
+DimPlot(svd_ec, reduction = "pca")
+ElbowPlot(svd_ec, ndims = 50)
+```
+
+## Visualisation
+
+Similar to Luise's dataset, two sub-populations appear corresponding to ECs and pericytes. 
+
+```{r, message=FALSE}
+# Clustering
+svd_ec <- FindNeighbors(svd_ec, dims = 1:20)
+svd_ec <- FindClusters(svd_ec, resolution = seq(from = 0.1, to = 1, by = 0.1))
+svd_ec <- RunUMAP(svd_ec, dims = 1:20)
+
+plot_list_func(svd_ec, col_pattern = "integrated_snn_res.")
+```
+
+### EC markers
+
+```{r, fig.width= 15, fig.height= 13}
+FeaturePlot(svd_ec, features= c("CLDN5", 
+                               "VWF", 
+                               "FLT1", 
+                               "ANO2", 
+                               "ST6GALNAC3", 
+                               "ELOVL7", 
+                               "ABCB1"))
+```
+
+## Pericyte markers 
+
+```{r, fig.width= 15, fig.height= 13}
+FeaturePlot(svd_ec, features= c("PDGFRB", 
+                              "NOTCH3", 
+                              "PRKG1", 
+                              "LAMA2", 
+                              "GPC5", 
+                              "PDE7B",
+                              "DLC1"))
+```
+
+## Subset ECs from SVD dataset
+
+At resoltution 0.2, cluster 0 appears to correpond to ECs while cluster 1, pericytes. So, I subset for ECs.
+
+```{r}
+Idents(svd_ec) <- "integrated_snn_res.0.2"
+svd_ec <- subset(svd_ec, ident=0)
+saveRDS(svd_ec, "/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/svd_ec.RDS")
+```
+
+# Integration with Luise's data
+
+```{r}
+ec <- readRDS(here("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/ec05.RDS")) 
+ec[["orig.ident"]] <- "norm"
+svd_ec[["orig.ident"]] <- "svd"
+ec.comb <- merge(x = ec, y = svd_ec, merge.data = TRUE)
+metadata <- ec.comb@meta.data
+
+ec.list <- SplitObject(ec.comb, split.by = "orig.ident")
+
+# Normalisation and feature selection
+for (i in 1:length(ec.list)) {
+    ec.list[[i]] <- NormalizeData(ec.list[[i]], verbose = FALSE)
+    ec.list[[i]] <- FindVariableFeatures(ec.list[[i]], selection.method = "vst", 
+        nfeatures = 2000, verbose = FALSE)
+}
+
+# select features that are repeatedly variable across datasets for integration
+features <- SelectIntegrationFeatures(object.list = ec.list)
+ec.anchors <- FindIntegrationAnchors(object.list = ec.list, anchor.features = features, dims = 1:20)
+ec.comb <- IntegrateData(anchorset = ec.anchors, dims=1:20)
+
+DefaultAssay(ec.comb) <- "integrated"
+
+# Run the standard workflow for visualization and clustering
+# Feature Selection and Scaling 
+ec.comb <- FindVariableFeatures(ec.comb, selection.method = "vst", nfeatures = 2000)
+all.genes <- rownames(ec.comb)
+ec.comb <- ScaleData(ec.comb, features = all.genes)
+
+# Linear dimensional reduction 
+ec.comb <- RunPCA(ec.comb, features = VariableFeatures(object = ec.comb))
+ElbowPlot(ec.comb, ndims = 50)
+
+# Visualisation
+ec.comb <- RunUMAP(ec.comb, dims = 1:20)
+DimPlot(ec.comb, reduction = "umap", group.by = "orig.ident")
+```
+
+
+
+```
+
+
+

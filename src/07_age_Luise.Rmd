@@ -1,0 +1,115 @@
+---
+title: "07_age_Luise"
+author: "Sera Choi"
+date: "13/06/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message=FALSE, warning=FALSE}
+# Load library
+library(Seurat)
+library(ggplot2)
+library(dplyr)
+library(here)
+library("scales")
+library(ggsci)
+library(gtools)
+
+# Load data
+ec <- readRDS(here("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/ec05.RDS")) 
+```
+
+# Differential gene expression with age
+
+This section performs DE analysis on ECs of young and old brain tissues. 
+
+Precious study on mouse hippocampus ageing (Brain Endothelial Cells Are Exquisite Sensors of Age- Related Circulatory Cues, 2020) has shown that majority of DEGs were increased upon ageing than decreased. 
+
+## Enhanced genes in Old 
+
+Overall, 7 genes are expressed higher in old than young that satisfy p-value < 0.05. Of these, only two genes satisfy the pct.1, pct.2 and adjusted p-value thresholds (ACER2, FGD6)
+
+* SLC7A5: An amino acid transporter in BBB, found to be upregulated in breast, prostate and lung cancer 
+* ACER2: Alkaline ceramidase 2 enhanced in capillary ECs of old mouse hippocampus tissue (Brain Endothelial Cells Are Exquisite Sensors of Age- Related Circulatory Cues, 2020). ACER2 promotes tumour angiogenesis (expansion of capillary network to supply tumour with nutrients and oxygen) (https://doi.org/10.1096/fasebj.25.1_supplement.739.10)
+* FGD6: Involved in EC apoptosis during vascular remodeling (infammatory response?)
+* TACC1: involved in fibrinolysis, extracellular matrix processing 
+
+Here I plotted Violin plot of top 10 enhanced genes in cells from Old individuals. 
+
+```{r,fig.width= 15, fig.height= 13, message=FALSE, warning=FALSE}
+Idents(ec) <- "AgeGroup"
+
+# enhanced genes in Old individuals
+old.markers <- FindMarkers(ec,
+                           ident.1 = "Old",
+                           ident.2 = "Young",
+                           only.pos = TRUE, 
+                           min.pct = 0.25, 
+                           logfc.threshold = 0.25,
+                           test.use = "MAST")
+
+old.markers <- subset(old.markers, old.markers$p_val_adj < 0.05)
+
+old.markers_sig <- subset(old.markers,
+                          old.markers$pct.1 > 0.25 &
+                          old.markers$pct.2 < 0.25 )
+old.markers
+old.markers_sig
+
+VlnPlot(ec, features = rownames(old.markers), group.by = "AgeGroup")
+```
+
+# Young-enhanced genes 
+
+None are enahnced. Three genes are identified in Young that satisfy p-value < 0.05. 
+
+* ABCG2 was enahnced in aged cells in mouse hippocampus. 
+
+```{r,fig.width= 15, fig.height= 7, message=FALSE, warning=FALSE}
+Idents(ec) <- "AgeGroup"
+
+# enhanced genes in Young individuals
+young.markers <- FindMarkers(ec,
+                           ident.1 = "Young",
+                           ident.2 = "Old",
+                           only.pos = TRUE, 
+                           min.pct = 0.25, 
+                           logfc.threshold = 0.25,
+                           test.use = "MAST")
+
+young.markers <- subset(young.markers,
+                            young.markers$p_val_adj < 0.05)
+young.markers
+VlnPlot(ec, features = rownames(young.markers), group.by = "AgeGroup")
+```
+
+# Dot Plot
+
+```{r, fig.width= 13}
+Idents(ec) <- "AgeGroup"
+DotPlot(ec, 
+        features=c(rownames(old.markers),rownames(young.markers)))
+```
+
+
+# Higher expression in aged cells?
+
+The study on ageing of mouse hippocampus showed that aged cells expressed more genes. Here, I tried checking this. 
+
+```{r}
+VlnPlot(ec, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), group.by="AgeGroup",ncol=3 )
+```
+
+# Conlcusion
+
+* In this dataset, genes are enhanced in aged cells and none are up-regulated in younger cells (sort of consistent with studies of ageing in mouse hippocampus)
+* Up-regulated genes in aged cells are previously known to be associated with cancer, inflammatory response and regeneration of ECMs. (consistent with hallmarks of ageing: neuroinflammation)
+* More genes and mito genes expressed in older cells (consistent with other studies)
+* Aged capillary has enhanced expression of genes associated with immunity, antigen-processing, matrix assembly and oxidative stress pathways. 
+
+
+
