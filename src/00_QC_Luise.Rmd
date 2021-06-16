@@ -18,8 +18,6 @@ double check and visualise some QC plots.
 library(Seurat)
 library(ggplot2)
 library(dplyr)
-library(SingleCellExperiment)
-library(scater)
 library(here)
 
 # Load data
@@ -27,7 +25,7 @@ ecpc <- readRDS(here("data/processed/ecpc.RDS"))
 ```
 
 ### Proportion of mito transcript 
-When Luise quality controlled the dataset, spliced and unspliced transcripts were QCed using different threshold values. Since no mito genes are present in unspliced, upper threshold for mito genes was set for only the spliced genes. Then counts for unspliced and spliced were combined. Therefore, the current values in 'percent.mt' reflect mito genes for only spliced genes. Here, I re-calculated the mito percentage and compared with the old. The mito percentage decreases because now, there are more non-mito genes (unspliced), reducing the proportion of mito genes present.   
+When Luise quality controlled the dataset, spliced and unspliced transcripts were QCed using different threshold values. Since no mito genes are present in unspliced, upper threshold for mito genes was set for only the spliced genes. Then counts for unspliced and spliced were combined. Therefore, the current values in 'percent.mt' reflect mito genes for only spliced genes. Here, I re-calculated the mito percentage and compared with the old. The mito percentage decreases because now, there are more non-mito genes (unspliced), reducing the proportion of mito genes present. ecpc00.RDS contains revised mito percentage.    
 
 
 ```{r}
@@ -38,7 +36,7 @@ VlnPlot(ecpc, features = c("percent.mt", "percent.mt_new"), ncol = 2)
 ecpc <- readRDS(here("data/processed/ecpc.RDS")) 
 ecpc[['percent.mt']]<- PercentageFeatureSet(ecpc, pattern = "^MT-")
 saveRDS(ecpc, "/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/ecpc00.RDS")
-ecpc <- readRDS(here("data/processed/ecpc_mt_updated.RDS")) 
+ecpc <- readRDS(here("data/processed/ecpc00.RDS")) 
 ```
 
 
@@ -61,13 +59,23 @@ Luise's thresholds are:
 * number of molecules: upper=30000, lower= 100
 * mito genes upper: 23%
 
-Here, I plotted violin plot for three covariates and created a table showing min and max values for each covariate in the dataset. The minimum and maximum values in the dataset agrees with the thresholds. 
+Here, I plotted violin plot for three covariates and created a table showing min and max values for each covariate in the dataset. The minimum and maximum values in the dataset agrees with the thresholds. I created plots at two endothelial population level and at sample level. 
 
 ```{r}
-VlnPlot(ecpc, features = c("nFeature_RNA","nCount_RNA", "percent.mt"), ncol = 3)
-metadata <- ecpc@meta.data #metadata
+# At cell annotation level
+VlnPlot(ecpc, 
+        features = c("nFeature_RNA","nCount_RNA", "percent.mt"), 
+        ncol = 3)
+
+# At sample level 
+VlnPlot(ecpc, 
+        features = c("nFeature_RNA","nCount_RNA", "percent.mt"), 
+        ncol = 3, 
+        group.by = "BBN",
+        pt.size = FALSE)
 
 # Create table containing min and max values of count depth, expressed genes and mito %
+metadata <- ecpc@meta.data #metadata
 minimum <- c(min(metadata$nFeature_RNA), min(metadata$nCount_RNA), min(metadata$percent.mt))
 maximum <- c(max(metadata$nFeature_RNA), max(metadata$nCount_RNA), max(metadata$percent.mt))
 min_max_df <- data.frame(minimum, maximum)
@@ -75,7 +83,6 @@ rownames(min_max_df) <- c("nFeature_RNA", "nCount_RNA", "percent.mito")
 min_max_df
 
 ```
-
 
 FeatureScater is used to visualise feature-feature relationships. Pearson correlation between two features is displayed at the top.
 
@@ -91,18 +98,12 @@ FeatureScater is used to visualise feature-feature relationships. Pearson correl
 * As total number of molcules in the cell increases, the number of unique gene increases at decreasing rate because 3 molecules of the same gene is just one gene. 
 
 ```{r, fig.width=10, fig.height=4, fig.fullwidth=TRUE}
-plot1 <- FeatureScatter(ecpc, feature1 = "nCount_RNA", feature2 = "percent.mt")
-plot2 <- FeatureScatter(ecpc, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+plot1 <- FeatureScatter(ecpc, feature1 = "nCount_RNA", feature2 = "percent.mt", group.by = "BBN")
+plot2 <- FeatureScatter(ecpc, feature1 = "nCount_RNA", feature2 = "nFeature_RNA", group.by = "BBN")
 plot1 + plot2
 ```
 
-# Plot by age group
+# Conlcusion 
 
-```{r}
-VlnPlot(ecpc, 
-        features = c("nFeature_RNA","nCount_RNA", "percent.mt"), 
-        ncol = 3, 
-        group.by = 'AgeGroup')
-```
-
-
+* Quality of cells in Luise's dataset appear good 
+* No major cause of concern. 
