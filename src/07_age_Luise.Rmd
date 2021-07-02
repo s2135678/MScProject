@@ -13,11 +13,30 @@ knitr::opts_chunk$set(echo = TRUE)
 # Load library
 library(Seurat)
 library(ggplot2)
+library(ggsci)
+library(gtools)
 library(dplyr)
 library(here)
 library("scales")
-library(ggsci)
-library(gtools)
+library(escape)
+library(dittoSeq)
+library(msigdbr)
+library(fgsea)
+library(tibble)
+library(future)
+
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
+mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
+mypal4 <- pal_simpsons(palette = c("springfield"), alpha = 0.7)(16)
+mypal5 <- pal_rickandmorty(palette = c("schwifty"), alpha = 0.7)(6)
+mypal6 <- pal_futurama(palette = c("planetexpress"), alpha = 0.7)(5)
+mypal7 <- pal_startrek(palette = c("uniform"), alpha = 0.7)(5)
+mycoloursP<- c(mypal, mypal2, mypal3, mypal4, mypal5, mypal6, mypal7)
+show_col(mycoloursP, labels =F)
+
+# Set maximum size of the object 
+options(future.global.maxSize = 16000*1024^2)
 
 # Load data
 ec <- readRDS(here("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/ec05.RDS")) 
@@ -27,16 +46,47 @@ ec <- readRDS(here("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/
 
 This section performs DE analysis on ECs of young and old brain tissues. 
 
-Precious study on mouse hippocampus ageing (Brain Endothelial Cells Are Exquisite Sensors of Age- Related Circulatory Cues, 2020) has shown that majority of DEGs were increased upon ageing than decreased. 
 
 ## Enhanced genes in Old 
 
-Overall, 7 genes are expressed higher in old than young that satisfy p-value < 0.05. Of these, only two genes satisfy the pct.1, pct.2 and adjusted p-value thresholds (ACER2, FGD6)
+Overall, 7 genes are expressed higher in old than young that satisfy adjusted p-value < 0.05. Of these, only two genes satisfy the pct.1, pct.2 and adjusted p-value thresholds (ACER2, FGD6). These 7 genes are genes I would like to explore further and also test on other datasets. Although the difference between young and aged is significant, the difference in expression is not large. The largest log2FC is 0.6, which is 2^0.6 = 1.5. This may be because there are not many ECs in the dataset. So, here I chose to filter by pct1 and pct2 as log2FC is small. To choose markers to validate in lab, ACER2 and FGD6 would be used but also, PLAT and TNRC6B could also be used.  
 
-* SLC7A5: An amino acid transporter in BBB, found to be upregulated in breast, prostate and lung cancer 
-* ACER2: Alkaline ceramidase 2 enhanced in capillary ECs of old mouse hippocampus tissue (Brain Endothelial Cells Are Exquisite Sensors of Age- Related Circulatory Cues, 2020). ACER2 promotes tumour angiogenesis (expansion of capillary network to supply tumour with nutrients and oxygen) (https://doi.org/10.1096/fasebj.25.1_supplement.739.10)
-* FGD6: Involved in EC apoptosis during vascular remodeling (infammatory response?)
-* TACC1: involved in fibrinolysis, extracellular matrix processing 
+**SLC7A5 (LAT1)**
+
+* Amino acid transporter responsible for uptake of amino acids in BBB (Capillary EC)
+* Involved in cancer and neurological disorders
+* An important pharmacological target 
+* As an essential amino acid transporter, has been reported to be enhanced in variety of cancers. It supplies amino acids to cancer cells 
+* Pathogenic mutations cause microcephaly and seizures
+* The Human SLC7A5 (LAT1): The Intriguing Histidine/Large Neutral Amino Acid Transporter and Its Relevance to Human Health(2018), The amino acid transporter SLC7A5 is required for efficient growth of KRAS-mutant colorectal cancer (2021), The amino acid transporter SLC7A5 confers a poor prognosis in the highly proliferative breast cancer subtypes and is a key therapeutic target in luminal B tumours (2018)  
+
+**CDK17**
+
+* CDK17 upregualted in Tau and Oligo (Quantitative phosphoproteomics uncovers dysregulated kinase networks in Alzheimer’s disease, 2020)
+* CDKs are responsible for controlled cell proliferation. 
+
+**ACER2**
+
+* Alkaline ceramidase 2 enhanced in capillary ECs of old mouse hippocampus tissue (Brain Endothelial Cells Are Exquisite Sensors of Age- Related Circulatory Cues, 2020). 
+* ACER2 promotes tumour angiogenesis (expansion of capillary network to supply tumour with nutrients and oxygen) (https://doi.org/10.1096/fasebj.25.1_supplement.739.10)
+
+**FGD6**
+
+* Expressed in HUVEC but function is unknown
+* Possibly involved with angiogenesis ((Arterioscler Thromb Vasc Biol. 2012;32:988-996.)
+
+**TACC1**
+
+*Also upregualted in aged ECs in mouse hippocampus tissue 
+
+**PLAT**
+
+* Involved in extracellular matrix processing (doi: 10.1152/ajpcell.00369.2011)
+
+**TNRC6B**
+
+* Reported to be important in microvascular maturation in developing lung (doi: 10.1016/j.ydbio.2017.07.018)
+
 
 Here I plotted Violin plot of top 10 enhanced genes in cells from Old individuals. 
 
@@ -52,22 +102,35 @@ old.markers <- FindMarkers(ec,
                            logfc.threshold = 0.25,
                            test.use = "MAST")
 
-old.markers <- subset(old.markers, old.markers$p_val_adj < 0.05)
+old.markers_sig <- subset(old.markers, old.markers$p_val_adj < 0.05)
 
-old.markers_sig <- subset(old.markers,
-                          old.markers$pct.1 > 0.25 &
-                          old.markers$pct.2 < 0.25 )
-old.markers
+#old.markers_sig <- subset(old.markers,
+#                          old.markers$pct.1 > 0.25 &
+#                          old.markers$pct.2 < 0.25 )
+
 old.markers_sig
 
-VlnPlot(ec, features = rownames(old.markers), group.by = "AgeGroup")
+VlnPlot(ec, features = rownames(old.markers_sig), group.by = "AgeGroup")
 ```
 
 # Young-enhanced genes 
 
-None are enahnced. Three genes are identified in Young that satisfy p-value < 0.05. 
+Three genes identified that satisfy adjusted p-value < 0.05. Requires further validation using different dataset with large number of ECs. Again, the log2FC is small, and none satisfy the pct1 and pct2 thresholds. 
 
-* ABCG2 was enahnced in aged cells in mouse hippocampus. 
+**ABCG2**
+
+* was enahnced in aged cells in mouse hippocampus
+* Experiments have demonstrated that inhibition of ABCG2 impaired the survival of microvascular ECs under oxidative stress (PMID: 20829509)
+
+**NFKBIA**
+
+* NF-kappa-B inhibitor alpha
+* Ageing is associated with greated NF-kB, reduced inhibitor of NF-kB (PMID: 18782346)
+
+**ZNF385B**
+
+* Zinc finger 
+
 
 ```{r,fig.width= 15, fig.height= 7, message=FALSE, warning=FALSE}
 Idents(ec) <- "AgeGroup"
@@ -87,29 +150,229 @@ young.markers
 VlnPlot(ec, features = rownames(young.markers), group.by = "AgeGroup")
 ```
 
-# Dot Plot
+# Gene Set enrichment analysis (GSEA)
 
-```{r, fig.width= 13}
-Idents(ec) <- "AgeGroup"
-DotPlot(ec, 
-        features=c(rownames(old.markers),rownames(young.markers)))
+## Aged ECs
+
+There are only 8 DEGs that satisfy the adjusted p-value < 0.05. Beucase there are so few genes, none of the pathways are significant. NES is enrichment score normalised to mean enrichment of random samples of the same size. Enrichment score reflects the degree ot which the genes in a gene set are overrepresented at the top or bottom of their entire ranked list of genes. ALthough none of the pathways are significant, the enriched pathways are interesting and point towards the right direction- complement: genes encoding components of complement system which is part of innate immune system. 
+
+```{r}
+# Prepare geneset
+hallmark <- msigdbr(species = "Homo sapiens", category = "H")
+geneset <- hallmark %>% split(x = .$gene_symbol, f = .$gs_name)
+# Prepare input data
+old.markers_sig$gene <- rownames(old.markers_sig)
+ranks <- old.markers_sig %>% select(gene, avg_log2FC)
+ranks <- deframe(ranks)
+# Run fgsea
+old.gsea_sig <- fgsea(pathways = geneset, stats = ranks, scoreType= "pos")
+# Tidy output
+old.gsea_sig_tidy <- old.gsea_sig %>% as_tibble() %>% arrange(desc(NES))
+old.gsea_sig_tidy %>% select(-leadingEdge, -ES) %>% arrange(padj)
+# Create barplot 
+ggplot(old.gsea_sig_tidy, aes(reorder(pathway, NES), NES)) + geom_col(aes(fill=padj<0.05)) + theme_minimal() + coord_flip()
+```
+
+Also tried with longer list. To achieve longer list I obtained enhanced genes in aged ECs that satisfy non-adjusted p-value < 0.05. Then took top 100 logFC genes. Still, none of the pathways are significant. But many pathways associated with ageing observed like reactive oxygen species pathways, P53 (senescenece), inflammatory response.  
+
+```{r, fig.height=8, fig.width=10}
+old.markers <- subset(old.markers, old.markers$p_val < 0.05)
+old.markers <- arrange(old.markers, desc(avg_log2FC))[1:100,]
+old.markers$gene <- rownames(old.markers)
+ranks <- old.markers %>% select(gene, avg_log2FC)
+ranks <- deframe(ranks)
+# Run fgsea
+old.gsea <- fgsea(pathways = geneset, stats = ranks, scoreType= "pos")
+# Tidy output
+old.gsea_tidy <- old.gsea %>% as_tibble() %>% arrange(desc(NES))
+old.gsea_tidy %>% select(-leadingEdge, -ES) %>% arrange(padj)
+# Create barplot 
+ggplot(old.gsea_tidy, aes(reorder(pathway, NES), NES)) + geom_col(aes(fill=padj<0.05)) + theme_minimal() + coord_flip()
+```
+
+# ssGSEA
+
+In ssGSEA, enrichment scores are calcualted across all individual cells for each pathway. Each ssGSEA enrichment score represents the degree to which the genes in a particular gene set are coordinately up- or down-regulated within a sample.There are 50 GSEA pathways. Within those, I looked at pathways often associated with ageing.  
+
+```{r, fig.width=13, fig.height=10}
+GS.hallmark <- getGeneSets(library = "H")
+pathways <- enrichIt(ec, gene.sets = GS.hallmark, groups = 1000, cores = 2)
+ec <- AddMetaData(ec, pathways)
+VlnPlot(ec, features= c("HALLMARK_ANGIOGENESIS",
+                        "HALLMARK_APOPTOSIS",
+                        "HALLMARK_COMPLEMENT",
+                        "HALLMARK_DNA_REPAIR",
+                        "HALLMARK_HYPOXIA",
+                        "HALLMARK_REACTIVE_OXYGEN_SPECIES_PATHWAY",
+                        "HALLMARK_INFLAMMATORY_RESPONSE",
+                        "HALLMARK_COMPLEMENT"),
+                        group.by = "AgeGroup")
+
+DotPlot(ec, features= c("HALLMARK_ANGIOGENESIS",
+                        "HALLMARK_APOPTOSIS",
+                        "HALLMARK_COMPLEMENT",
+                        "HALLMARK_DNA_REPAIR",
+                        "HALLMARK_HYPOXIA",
+                        "HALLMARK_REACTIVE_OXYGEN_SPECIES_PATHWAY",
+                        "HALLMARK_INFLAMMATORY_RESPONSE"),
+                        group.by = "AgeGroup")
 ```
 
 
-# Higher expression in aged cells?
+## Higher expression in aged cells?
 
-The study on ageing of mouse hippocampus showed that aged cells expressed more genes. Here, I tried checking this. 
+The study on ageing of mouse hippocampus showed that aged cells expressed more genes. Here, I tried checking this. It has been reported that transcriptional heterogeneity increases with age due to a general defect in transcriptional regulation (PMID: 29492790). 
 
 ```{r}
 VlnPlot(ec, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), group.by="AgeGroup",ncol=3 )
 ```
 
-# Conlcusion
 
-* In this dataset, genes are enhanced in aged cells and none are up-regulated in younger cells (sort of consistent with studies of ageing in mouse hippocampus)
-* Up-regulated genes in aged cells are previously known to be associated with cancer, inflammatory response and regeneration of ECMs. (consistent with hallmarks of ageing: neuroinflammation)
-* More genes and mito genes expressed in older cells (consistent with other studies)
-* Aged capillary has enhanced expression of genes associated with immunity, antigen-processing, matrix assembly and oxidative stress pathways. 
+# Hallmarks of ageing 
+
+Hallmarks of Brain Aging: Adaptive and Pathological Modification by Metabolic States (2018)
+
+1. Mitochondrial dysfunction
+2. Accummulation of oxidatively damaged proteins, nucleic acids, lipds
+3. dysregulated energy metabolism
+4. Compromosed DNA repair 
+5. Inflammation
+6. Cell senescence? 
+
+## Reduced number of pericytes in old? 
+
+In young 43% and old 41% are pericytes. So, slightly less but difficult to test this with small number of cells. Would like to test this in larger datasets. 
+
+```{r, fig.width=7}
+ecpc <- readRDS(here("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/ecpc04.RDS")) 
+
+# Proportion of different cells in different age group 
+prop_samples <- prop.table(table(ecpc$AgeGroup,Idents(ecpc)), margin=1)
+prop_samples <- as.data.frame(prop_samples)
+colnames(prop_samples) <- c("AgeGroup", "CellType", "proportion")
+
+prop_samples
+
+# Plot a barplot 
+ggplot(as.data.frame(prop_samples), aes(x=AgeGroup, y=proportion, fill= CellType)) + geom_bar(stat="identity")+ theme_classic() + scale_fill_manual(values=mycoloursP[1:20])
+```
+
+## Mitochondrial dysfunction 
+
+Ageing of brain is often associated with mitochondrial dysfunction. It is marked by:
+
+* altered mitochondrial respiration
+* decreased energy production
+* increased oxidative damage to mitochondrial proteins and DNA
+
+## Increased oxidative stress?
+
+Increased production of reactive oxygen species and/or reduced antioxidant defecens cause accummulation of dysfunctional and aggregated proteins in cells. Hypoxia? 
+
+## Angiogenesis 
+
+Association of angeiogensis and age has been studied in heart. Angiogenesis is impaired in aged cells (microvessel ECs of heart). Due to this decline in microvascular density, there is decreased blood flow, impaired response to hypoxia, worsened ischemic tissue injury. During cardiac muscle growth, an imbalance between growth of muscle and impaired angiogenesis is likely to contribute towards cardiac failure. Ageing leads to dysregulated expression of both positive and negative regulators of angiogenesis in the heart. 
+
+```{r}
+VlnPlot(ec, features = "DLL4", group.by = "AgeGroup")
+```
+
+
+```{r}
+VlnPlot(ec, features = c("VEGFA","PDGFB"), group.by = "AgeGroup")
+```
+
+## Cell senescence
+
+Does cell senescence play role in brain EC ageing? Cell senescence is characterised by pro-inflammtory phenotype (cytokines and MMPs, upregulation of CDK inhibitors). Cellular senesence is emerging as a key mechanism of age-related vascular endothelial dysfuntion. There is a hypothesis that senescent ECs accummulate with ageing and causes disruptions to BBB and neurovascular decoupling. 
+
+```{r}
+VlnPlot(ec, features=c('VCAM1', "IL1B"), group.by="AgeGroup")
+```
+
+## Microglia cells 
+
+```{r}
+seur <- readRDS("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/srt_anno_01.RDS")
+DimPlot(seur, reduction = "umap")
+microglial <- subset(seur, idents = c("Microglia-Macrophages_1","Microglia-Macrophages_2"))
+
+# Feature Selection
+microglial <- FindVariableFeatures(microglial, selection.method = "vst", nfeatures = 2000)
+all.genes <- rownames(microglial)
+microglial <- ScaleData(microglial, features = all.genes)
+
+# Dimensionality reduction
+microglial <- RunPCA(microglial, features = VariableFeatures(object = microglial))
+DimPlot(microglial, reduction = "pca")
+ElbowPlot(microglial, ndims = 50)
+
+# Cluster at different resolutions 
+microglial <- FindNeighbors(microglial, dims = 1:20)
+microglial <- FindClusters(microglial, resolution = seq(from = 0.1, to = 1, by = 0.1))
+microglial <- RunUMAP(microglial, dims = 1:20)
+
+#Generate DimPlot of all tested clustering resolutions in metadata
+# requires gtools library and Seurat
+plot_list_func <- function(seur_obj,
+                           col_pattern,
+                           clust_lab = TRUE,
+                           label_size = 8,
+                           num_col = 4){
+  # finds column with additional resolution clusterings
+  extr_res_col <- grep(pattern = col_pattern, names(seur_obj@meta.data))
+  # obtain column names
+  res_names <- names(seur_obj@meta.data[extr_res_col])
+  
+  # gtools function, sorts gene_names alphanumeric:
+  res_names <- mixedsort(res_names) 
+  plot_l <-list()
+  
+  for(i in 1: length(res_names)){
+  dim_plot <- DimPlot(seur_obj, 
+                      reduction = "umap", 
+                      group.by = res_names[i],
+                      label = clust_lab,
+                      label.size = label_size) + NoLegend()
+  print(dim_plot)
+ }
+}
+
+plot_list_func(microglial, col_pattern = "RNA_snn_res.")
+
+
+
+FeaturePlot(microglial, features=c("TMEM119","ITGAM","PTPRC"))
+
+Idents(microglial) <- "AgeGroup"
+
+table(Idents(microglial))
+
+ecpcmc <- merge(ecpc, microglial, merge.data = TRUE)
+
+# Feature Selection
+ecpcmc <- FindVariableFeatures(ecpcmc, selection.method = "vst", nfeatures = 2000)
+all.genes <- rownames(ecpcmc)
+ecpcmc <- ScaleData(ecpcmc, features = all.genes)
+
+# Dimensionality reduction
+ecpcmc <- RunPCA(ecpcmc, features = VariableFeatures(object = ecpcmc))
+DimPlot(ecpcmc, reduction = "pca")
+ElbowPlot(ecpcmc, ndims = 50)
+
+# Cluster at different resolutions 
+ecpcmc <- FindNeighbors(ecpcmc, dims = 1:20)
+ecpcmc <- FindClusters(ecpcmc, resolution = seq(from = 0.1, to = 1, by = 0.1))
+ecpcmc <- RunUMAP(ecpcmc, dims = 1:20)
+
+plot_list_func(ecpcmc, col_pattern = "RNA_snn_res.")
+
+
+```
+
+
+
+
 
 
 

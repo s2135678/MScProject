@@ -1,0 +1,39 @@
+---
+title: "08_Multiple_cortical"
+author: "Sera Choi"
+date: "20/06/2021"
+output: html_document
+---
+
+```{r, message=FALSE, warning=FALSE}
+# Load library
+library(Seurat)
+library(ggplot2)
+library(dplyr)
+library(here)
+library(future)
+library(data.table)
+library(Rfast)
+
+# Set maximum size of the object 
+options(future.global.maxSize = 100000*1024^2)
+```
+
+# Multiple Cortical dataset 
+
+single-nuclei data from 6 areas of human cortex (middle temporal gyrus (MTG), anterior cingulate gyrus (CgGr), primary visual cortex (V1C), primary motor cortex (M1C), primary somatosensory cortex (S1C) and primary auditory cortex (A1C)) from Allen Brain Map. The full dataset was processed and ECs were extracted using MSc server (Multiple_cortical.Rmd).
+
+* snRNA-seq: SMRT-seq v4
+* 3 individuals aged 43(F), 50(M), 54(M)
+
+```{r}
+ec <- readRDS("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/multiple_cortical_ec.RDS")
+Idents(ec) <- "BBN"
+table(Idents(ec))
+
+luise <- readRDS("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/Luise_ec.RDS")
+
+```
+
+
+

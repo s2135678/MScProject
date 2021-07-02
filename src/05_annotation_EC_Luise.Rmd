@@ -221,6 +221,7 @@ Using vessel-specific gene markers from mouse brain are not fitted for identifyi
 Appears that cluster 2 is made up of 8 samples, with most cells coming from two samples (1.30841 and BBN14396)
 
 ```{r}
+Idents(ec) <- "RNA_snn_res.0.2"
 
 DimPlot(ec, reduction='umap',group.by = "AgeGroup")
 DimPlot(ec, reduction='umap',group.by = "gender")
@@ -252,7 +253,7 @@ ggplot(as.data.frame(prop_CauseOfDeath), aes(x=Cluster, y=Proportion, fill= Caus
 
 Appears that most cells from individual (BBN14396) whose death is 'unascertained' contributes to cluster 2. This makes it difficult to find the identity of cells in cluster 2. My first guess would be damanged or dysfunctional ECs. 
 
-```{r,fig.width=15}
+```{r}
 # Proportion of cells from each samples in different clusters
 prop_CauseOfDeath_1 <- prop.table(table(Idents(ec), ec$CauseOfDeath_1a), margin=1)
 prop_CauseOfDeath_1 <- as.data.frame(prop_CauseOfDeath_1)

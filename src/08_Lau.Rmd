@@ -1,0 +1,245 @@
+---
+title: "08_Lau"
+author: "Sera Choi"
+date: "24/06/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message=FALSE, warning=FALSE}
+# Load library
+library(Seurat)
+library(ggplot2)
+library(dplyr)
+library(here)
+library("scales")
+library(ggsci)
+library(gtools)
+library(future)
+
+options(future.globals.maxSize = 50000*1024^2)
+```
+
+# Increasing cell depth
+
+To validate results from Luise's dataset, more ECs are needed from publically available sources. Lau et al (2020) has generated single-nucleus data from normal brain samples. (GSE157827)
+
+* snRNA-seq: 10x version 3
+* Prefrontal cortex (BA6, BA8, BA9 domains)
+* 5 individuals aged 74(F), 79(F), 85(M), 87(M), 90(M)
+
+# Lau et al
+
+Lau_mtx_to_seur.R script downloads data from GEO, labels sampleID, age and sex, and converts into Seuart object.
+
+```{r}
+lau <- readRDS("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/Lau_et_al.RDS")
+table(lau$orig.ident)
+```
+
+## Quality control
+
+All looks okay apart from NC11. Smaller library size and high mito transcript indicates low quality. However, the study kept this sample and NC11 contains higher proportion of ECs than other samples. So I also decided to keep this sample.
+
+I followed Lau et al's quality threshold values. Before filtering, there were 45,133 nuclei. After QC, there are 43,616 nuclei (1517 removed).
+
+```{r,fig.width= 10, fig.height= 5}
+lau[["percent.mt"]] <- PercentageFeatureSet(lau, pattern = "^MT-")
+VlnPlot(lau, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size = FALSE)
+plot1 <- FeatureScatter(lau, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot2 <- FeatureScatter(lau, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+plot1 + plot2
+```
+```{r,fig.width= 10, fig.height= 5}
+# Filter out low quality cells 
+lau <- subset(lau, subset = nFeature_RNA > 200 & nFeature_RNA < 20000 & percent.mt < 20)
+
+VlnPlot(lau, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size = FALSE)
+plot1 <- FeatureScatter(lau, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot2 <- FeatureScatter(lau, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+plot1 + plot2
+table(lau$orig.ident)
+```
+
+## Normalisation
+
+Lau et al simply used the Seurat basic normalisation method. 
+
+```{r}
+lau <- NormalizeData(lau, normalization.method = "LogNormalize", scale.factor = 10000)
+lau <- NormalizeData(lau)
+```
+
+## Feature Selection and Scaling 
+```{r, message=FALSE}
+lau <- FindVariableFeatures(lau, selection.method = "vst", nfeatures = 2000)
+all.genes <- rownames(lau)
+lau <- ScaleData(lau, features = all.genes)
+```
+
+## Linear Dimensional reduction 
+```{r, message=FALSE}
+lau <- RunPCA(lau, features = VariableFeatures(object = lau))
+DimPlot(lau, reduction = "pca")
+ElbowPlot(lau, ndims = 50)
+```
+
+## Visualisation
+
+Lau et al used 20PCs but here, I used 25PCs. 
+The dataset shows batch effect, so I will continue onto integration. 
+
+```{r, message=FALSE, warning=FALSE}
+lau <- RunUMAP(lau, dims = 1:25)
+DimPlot(lau, reduction='umap',group.by = "orig.ident")
+```
+
+## Integration
+
+```{r, message=FALSE, warning=FALSE}
+# Split Seurat object into 4 objects corresponding to each sample 
+lau.list <- SplitObject(lau, split.by = "orig.ident")
+
+# Normalise and identify HVGs for each dataset independently
+lau.list <- lapply(X = lau.list, FUN = function(x) {
+    x <- NormalizeData(x)
+    x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 2000)
+})
+
+# select features that are repeatedly variable across datasets for integration
+features <- SelectIntegrationFeatures(object.list = lau.list)
+lau.anchors <- FindIntegrationAnchors(object.list = lau.list, anchor.features = features, dims = 1:20)
+lau.combined <- IntegrateData(anchorset = lau.anchors, dims=1:20)
+
+DefaultAssay(lau.combined) <- "integrated" 
+```
+
+## Feature selection, scaling, dimensionality reduction, visualisation of integrated data
+```{r}
+# Run the standard workflow for visualization and clustering
+# Feature Selection and Scaling 
+lau.combined <- FindVariableFeatures(lau.combined, selection.method = "vst", nfeatures = 2000)
+all.genes <- rownames(lau.combined)
+lau.combined <- ScaleData(lau.combined, features = all.genes)
+
+# Linear dimensional reduction 
+lau.combined <- RunPCA(lau.combined, features = VariableFeatures(object = lau.combined))
+ElbowPlot(lau.combined, ndims = 50)
+
+# Visualisation
+lau.combined <- RunUMAP(lau.combined, dims = 1:20)
+DimPlot(lau.combined, reduction = "umap", group.by = "orig.ident")
+```
+
+# Clustering 
+
+At resolution 1, cluster 13 appears to be EC population.
+
+```{r}
+lau.combined <- FindNeighbors(lau.combined, dims = 1:20)
+lau.combined <- FindClusters(lau.combined, resolution = 0.1)
+lau.combined <- RunUMAP(lau.combined, dims = 1:20)
+DimPlot(lau.combined, reduction = "umap", label = TRUE)
+```
+
+```{r, fig.width= 15, fig.height= 13}
+FeaturePlot(lau.combined, features= c("CLDN5",
+                                      "FLT1",
+                                      "ABCB1"))
+
+```
+
+## Subset for ECs 
+
+```{r}
+Idents(lau.combined) <- "integrated_snn_res.0.1"
+lau_ec <- subset(lau.combined, ident=13)
+saveRDS(lau_ec, "/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/Lau_ec.RDS")
+```
+
+# Processing of EC population from Lau et al
+
+```{r}
+
+lau_ec <- readRDS("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/Lau_ec.RDS")
+
+# Feature selection and scaling 
+lau_ec <- FindVariableFeatures(lau_ec, selection.method = "vst", nfeatures = 2000)
+all.genes <- rownames(lau_ec)
+lau_ec <- ScaleData(lau_ec, features = all.genes)
+
+# Linear Dimensional reduction 
+lau_ec <- RunPCA(lau_ec, features = VariableFeatures(object = lau_ec))
+DimPlot(lau_ec, reduction = "pca")
+ElbowPlot(lau_ec, ndims = 50)
+
+# Clustering 
+
+#Generate DimPlot of all tested clustering resolutions in metadata
+# requires gtools library and Seurat
+plot_list_func <- function(seur_obj,
+                           col_pattern,
+                           clust_lab = TRUE,
+                           label_size = 8,
+                           num_col = 4){
+  # finds column with additional resolution clusterings
+  extr_res_col <- grep(pattern = col_pattern, names(seur_obj@meta.data))
+  # obtain column names
+  res_names <- names(seur_obj@meta.data[extr_res_col])
+  
+  # gtools function, sorts gene_names alphanumeric:
+  res_names <- mixedsort(res_names) 
+  plot_l <-list()
+  
+  for(i in 1: length(res_names)){
+  dim_plot <- DimPlot(seur_obj, 
+                      reduction = "umap", 
+                      group.by = res_names[i],
+                      label = clust_lab,
+                      label.size = label_size) + NoLegend()
+  print(dim_plot)
+  }
+}  
+
+lau_ec <- FindNeighbors(lau_ec, dims = 1:20)
+lau_ec <- FindClusters(lau_ec, resolution = seq(from = 0.1, to = 1, by = 0.1))
+lau_ec <- RunUMAP(lau_ec, dims = 1:20)
+
+plot_list_func(lau_ec, col_pattern = "integrated_snn_res.")
+```
+
+### EC markers
+
+```{r, fig.width= 15, fig.height= 13}
+FeaturePlot(lau_ec, features= c("CLDN5", 
+                               "VWF", 
+                               "FLT1", 
+                               "ANO2", 
+                               "ST6GALNAC3", 
+                               "ELOVL7", 
+                               "ABCB1"))
+```
+
+### Pericyte markers 
+
+```{r, fig.width= 15, fig.height= 13}
+FeaturePlot(lau_ec, features= c("PDGFRB", 
+                              "NOTCH3", 
+                              "PRKG1", 
+                              "LAMA2", 
+                              "GPC5", 
+                              "PDE7B",
+                              "DLC1"))
+```
+
+
+## Subset for ECs only 
+```{r}
+Idents(lau_ec) <- "integrated_snn_res.0.1"
+lau_ec <- subset(lau_ec, idents = 0)
+saveRDS(lau_ec, "/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/Lau_ec.RDS")
+```
+
