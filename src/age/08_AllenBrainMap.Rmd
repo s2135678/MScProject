@@ -1,0 +1,144 @@
+---
+title: "08_AllenBrainMap"
+author: "Sera Choi"
+date: "20/06/2021"
+output: html_document
+---
+
+```{r, message=FALSE, warning=FALSE}
+# Load library
+library(Seurat)
+library(ggplot2)
+library(dplyr)
+library(here)
+library(future)
+library(data.table)
+library(Rfast)
+
+# Set maximum size of the object 
+options(future.global.maxSize = 100000*1024^2)
+```
+
+# Allen Brain Map dataset
+
+Allen Brain Map provides two datasets: multiple cortical and middle temporal gyrus. These datasets will be processed separately and integrated to form a large dataset. 
+
+## Multiple Cortical dataset 
+
+single-nuclei data from 6 areas of human cortex (middle temporal gyrus (MTG), anterior cingulate gyrus (CgGr), primary visual cortex (V1C), primary motor cortex (M1C), primary somatosensory cortex (S1C) and primary auditory cortex (A1C)) from Allen Brain Map. The full dataset was processed and ECs were extracted using MSc server (Multiple_cortical.Rmd).
+
+* snRNA-seq: SMRT-seq v4
+* 3 individuals aged 43(F), 50(M), 54(M)
+
+There are so few number of cells (37), that there is no point in trying to characterise these further. I will assume all are ECs and none are pericytes. Perhaps different cell-types will appear after integrating with others. 
+
+```{r}
+mc <- readRDS("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/multiple_cortical_ec.RDS")
+```
+
+## Middle temporal gyrus dataset 
+
+single-nuclei data from middle temporal gyrus. The original dataset contained data from 8 individuals including 3 individuals from mmultiple cortical dataset. These 3 individuals were removed. The exon and intron counts data was summed up, processed and converted into seurat object using Eddie (MTG.R). 
+
+* snRNA-seq: SMART-seq v4
+* 5 individuals: 24(F), 25(M), 35(F), 48(F), 66(M)
+
+The full dataset contains 15,928 nuclei. However, after subsetting for 5 individuals only (excluding individuals in multiple cortical dataset), 1,093 nuclei remain. 
+
+The additional metadata: mito percentage, total reads aligned (%) and unique reads (%) were taken from the metadata provided by Allen Brain Map. 
+
+```{r}
+mtg <- readRDS("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/MTG.RDS")
+full_metadata <- read.csv("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/ABM_MTG/human_MTG_2018-06-14_samples-columns.csv")
+
+# Add metadata
+mtg[["BBN"]] <- full_metadata$donor
+mtg[["Tissue"]] <- full_metadata$brain_region
+mtg[["gender"]] <- full_metadata$sex
+mtg[["percent.mt"]] <- full_metadata$percent_mt_exon_reads
+mtg[["total_reads_aligned"]] <- full_metadata$percent_aligned_reads_total
+mtg[["unique_reads"]] <- full_metadata$percent_reads_unique
+
+metadata <- mtg@meta.data
+mod_metadata <- metadata %>% mutate(Age = case_when(BBN == "H200.1023" ~ '43',
+                                                    BBN == "H200.1025" ~ '50',
+                                                    BBN == "H200.1030" ~ '54',
+                                                    BBN == "H16.24.010" ~ "66",
+                                                    BBN == "H16.06.002" ~ "35",
+                                                    BBN == "H16.06.008" ~ "24",
+                                                    BBN == "H16.06.009" ~ "48",
+                                                    BBN == "H16.03.004" ~ "25"))
+                                    
+mtg[["Age"]] <- mod_metadata$Age
+
+# Remove cells from H200.1023, H200.1025, H200.1030
+
+unique_mtg <- subset(mtg, BBN == "H16.24.010"|
+                          BBN == "H16.06.002"|
+                          BBN == "H16.06.008"|
+                          BBN == "H16.06.009"|
+                          BBN == "H16.06.009"|
+                          BBN == "H16.03.004")
+```
+
+### Processing MTG dataset from 5 individuals 
+
+The full list of QC thresholds was not used due to lack of information. With what I have, the thresholds were:
+
+* > 500,000 aligned reads 
+* > 40% of total reads aligned 
+* > 50% unique reads 
+
+```{r}
+# Quality Control
+VlnPlot(unique_mtg, features = c("nFeature_RNA", "nCount_RNA","percent.mt"), ncol=3, pt.size = 0, group.by = "BBN")
+unique_mtg <- subset(unique_mtg, subset = nCount_RNA > 500000 & total_reads_aligned > 40 & unique_reads > 50)
+
+# Normalisation
+unique_mtg <- NormalizeData(unique_mtg)
+
+# Feature selection 
+unique_mtg <- FindVariableFeatures(unique_mtg, selection.method = "vst", nfeatures = 2000)
+
+# Scale data
+all.genes <- rownames(unique_mtg)
+unique_mtg <- ScaleData(unique_mtg, features = all.genes)
+
+# Dimensionality reduction
+unique_mtg <- RunPCA(unique_mtg, features = VariableFeatures(object = unique_mtg))
+ElbowPlot(unique_mtg, ndims=50)
+
+# Visualisation
+unique_mtg <- RunUMAP(unique_mtg, dims = 1:20)
+DimPlot(unique_mtg, reduction="umap", group.by = "BBN")
+FeaturePlot(unique_mtg, features = "CLDN5")
+
+# Integration
+# Split Seurat object into 4 objects corresponding to each sample 
+mtg.list <- SplitObject(unique_mtg, split.by = "BBN")
+
+# Normalise and identify HVGs for each dataset independently
+mtg.list <- lapply(X = mtg.list, FUN = function(x) {
+    x <- NormalizeData(x)
+    x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 2000)
+})
+
+# select features that are repeatedly variable across datasets for integration
+features <- SelectIntegrationFeatures(object.list = mtg.list)
+mtg.anchors <- FindIntegrationAnchors(object.list = mtg.list, anchor.features = features, dims = 1:20)
+mtg.combined <- IntegrateData(anchorset = mtg.anchors, dims=1:20)
+
+DefaultAssay(mtg.combined) <- "integrated" 
+
+
+
+# Clustering at different resolutions
+ec <- FindNeighbors(ec, dims = 1:20)
+ec <- FindClusters(ec, resolution = c(0.01, 0.05, seq(from = 0.1, to = 1, by = 0.1)))
+ec <- RunUMAP(ec, dims = 1:20)
+plot_list_func(seur_obj = ec, col_pattern = "integrated_snn_res.")
+```
+
+
+
+

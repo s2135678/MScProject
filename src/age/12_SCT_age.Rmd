@@ -1,0 +1,369 @@
+---
+title: "12_SCT_age"
+author: "Sera Choi"
+date: "11/07/2021"
+output: html_document
+---
+```{r, message=FALSE, warning=FALSE}
+# Load library
+library(Seurat)
+library(ggplot2)
+library(ggsci)
+library(gtools)
+library(dplyr)
+library(here)
+library("scales")
+library(escape)
+library(dittoSeq)
+library(tibble)
+library(future)
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(DOSE)
+library(pathview)
+library(clusterProfiler)
+library(AnnotationHub)
+library(ensembldb)
+library(tidyverse)
+library(annotables)
+library(enrichplot)
+
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
+mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
+mypal4 <- pal_simpsons(palette = c("springfield"), alpha = 0.7)(16)
+mypal5 <- pal_rickandmorty(palette = c("schwifty"), alpha = 0.7)(6)
+mypal6 <- pal_futurama(palette = c("planetexpress"), alpha = 0.7)(5)
+mypal7 <- pal_startrek(palette = c("uniform"), alpha = 0.7)(5)
+mycoloursP<- c(mypal, mypal2, mypal3, mypal4, mypal5, mypal6, mypal7)
+show_col(mycoloursP, labels =F)
+
+# Set maximum size of the object 
+options(future.global.maxSize = 100000*1024^2)
+```
+
+
+# Age analysis of SCT integrated data
+
+Rather than CCA, better, more advanced integration method SCTransform was used to integrate Luise, Lau and downsampled Yang data. Age analysis will be performed here. 
+
+```{r}
+ec <- readRDS("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/SCT_ec")
+```
+
+## Enhanced genes in Aged 
+
+Previously using only Luise's dataset, only 8 gene were identified to be enhanced in aged cells. However, with increased cell depth, many more cells are identified to be enhanced. Overall 208 DEGs were identified. Of these, 50 were statistically significant (<0.05). I reduced the list furtherby setting thresholds:
+
+* adjusted p-value < 0.05
+* pct.1 > 25%
+* pct.2 < 25%
+* logFC > 0.25
+
+Giving, overall 30 genes that are enhanced in aged ECs. 
+
+* MKL2 was removed from the list because MKL2 and MRTFB are same the genes with different gene symbols. It appears that MKL2 is expressed by all cells across different datasets but in Lau and Yang, genes are labelled MKL2, while in Luise, gene is labelled MRTFB. Since Lau and Yang mostly represent Aged cells, MKL2 appears to be expressed more in Aged when in fact not. 
+
+Therefore, 29 genes were enhanced in aged ECs. 
+
+```{r, fig.height=13, fig.width=15}
+DefaultAssay(ec) <- "RNA"
+Idents(ec) <- "AgeGroup"
+
+old.markers <- FindMarkers(ec,
+                           ident.1 = "Old",
+                           ident.2 = "Young",
+                           only.pos = TRUE, 
+                           min.pct = 0.25, 
+                           logfc.threshold = 0.25,
+                           test.use = "MAST")
+old.markers
+
+old.markers_sig <- subset(old.markers, old.markers$p_val_adj < 0.05 )
+old.markers_stringent <- subset(old.markers, subset =(old.markers$p_val_adj < 0.05 & old.markers$pct.1 > 0.25 & old.markers$pct.2 < 0.25))
+old.markers_stringent <- old.markers_stringent[c(-1),] # Remove MKL2
+
+# Output 
+old.markers_stringent
+VlnPlot(ec, assay = "RNA", features = rownames(old.markers_stringent)[1:12], group.by = "AgeGroup", pt.size = 0)
+```
+
+## GSEA with MSigDB hallmarks and ontology terms 
+
+GSEA was performed using 50 significant up-regulated genes in Aged (old.markers_sig).
+
+* H = hallmark gene sets 
+* c5 = gene sets derived from the GO biological process ontology
+
+```{r}
+## Format data
+# Return true/false where gene symbols in grch38 matches that in list of DEGs
+idx <- grch38$symbol %in% rownames(old.markers)
+# Subset for rows in grch38 that matches DEGs 
+ids <- grch38[idx,]
+
+# The gene names can map to more than one Ensembl ID (some genes change ID over time), 
+# so we need to remove duplicate IDs prior to assessing enriched GO terms
+non_duplicates <- which(duplicated(ids$symbol) == FALSE)
+ids <- ids[non_duplicates, ] 
+
+# Add gene column in DEG list 
+old.markers["gene"] <- rownames(old.markers)
+
+# Merge DEGs with subset of table from grch38
+res_ids <- inner_join(old.markers, ids, by=c("gene" ="symbol")) 
+
+# Create dataset containing significant genes 
+sig_ids <- subset(res_ids, p_val_adj < 0.05)
+
+# remove NAs
+res_entrez <- subset(sig_ids, entrez != "NA")
+
+# Remove duplicates 
+res_entrez <- res_entrez[which(duplicated(res_entrez$entrez) == F), ]
+
+# Extract name and fold-changes
+foldchanges <- res_entrez$avg_log2FC
+
+# Name each fold change with the corresponding Entrez ID
+names(foldchanges) <- res_entrez$entrez
+
+# Order in decreasing order
+foldchanges <- sort(foldchanges, decreasing = TRUE)
+
+## Load GMT file downloaded from MSigDB website 
+h <- read.gmt("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/MSigDB_H")
+
+# Hallmarks
+msig_h <- GSEA(foldchanges, 
+               TERM2GENE=h,
+               scoreType = "pos",
+               minGSSize = 1,
+               pvalueCutoff = 1,
+               pAdjustMethod = "BH"
+               )
+
+msig_H_result <- data.frame(msig_h)
+msig_H_result <- msig_H_result[-c(16),] # remove p53 pathway
+msig_H_tidy <- subset(msig_H_result, subset = msig_H_result$pvalue<0.5)
+
+#Barplot
+ggplot(msig_H_result, aes(reorder(Description, NES), NES)) + geom_col(aes(fill=p.adjust< 0.2)) + theme_minimal() + coord_flip() + theme(axis.title = element_text(size = 12))
+```
+
+## GSEA with MSigDB gene ontology
+
+```{r, fig.width=15, fig.height=5}
+# Gene ontology
+c5 <- read.gmt("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/MSigDB_C5")
+
+msig_c5 <- GSEA(foldchanges, 
+               TERM2GENE=c5,
+               scoreType = "pos",
+               minGSSize = 2,
+               pvalueCutoff = 1,
+               pAdjustMethod = "BH"
+               )
+
+msig_C5_result <- data.frame(msig_c5)
+msig_C5_tidy <- subset(msig_C5_result, subset = msig_C5_result$pvalue<0.05)
+
+#Barplot
+ggplot(msig_C5_tidy, aes(str_wrap(Description,width=1), NES)) + geom_col(aes(fill=p.adjust <0.2)) + theme_minimal() + coord_flip()
+```
+
+# Enhanced genes in Young 
+
+With MAST, 315 enhanced genes found in young cells. Of these, 62 are significant under adjusted p-val < 0.05. After applying more stringent thresholds same as aged cells, 22 are significant. 
+
+Without any thresholds, many genes are mito related, perhaps cells are stressed.
+After adjusted p-val <0.05 is applied, mito genes still remain.
+It's only after the stringent thresholds are applied, most of mito genes disappear. But now, ribosomal genes appear. 
+
+
+```{r, fig.height=13, fig.width=15}
+Idents(ec) <- "AgeGroup"
+
+young.markers <- FindMarkers(ec,
+                           assay = "RNA",
+                           ident.1 = "Young",
+                           ident.2 = "Old",
+                           only.pos = TRUE, 
+                           min.pct = 0.25, 
+                           logfc.threshold = 0.25,
+                           test.use = "MAST")
+young.markers
+
+young.markers_sig <- subset(young.markers, young.markers$p_val_adj < 0.05 )
+young.markers_sig
+
+young.markers_stringent <- subset(young.markers, subset =(young.markers$p_val_adj < 0.05 & 
+                                                            young.markers$pct.1 > 0.25 & 
+                                                            young.markers$pct.2 < 0.25))
+young.markers_stringent <- young.markers_stringent[c(-1),] # remove MKL2
+
+VlnPlot(ec, assay = "RNA", features = rownames(young.markers_stringent)[1:12], group.by = "AgeGroup", pt.size = 0)
+```
+
+### Checking Ribo genes 
+
+It is quite strange to have so many ribo genes reported as enhanced in young. It could be that the cells are too similar and the statistics picks up only the most abundant genes just because they are most easy to detect. Therefore, here I checked whether the % of total RPL/RPS genes is different compared to non-RPS/RPL genes. Perhaps there aren't many genes that are enahcned in young when compared to old. Since almost all (Expet 1) indiciduals in young group are from Luise's data and luise's dataset contains high percentage of ribosomal genes, perhaps it is finding genes that are different between datasets (Luise vs Lau+Yang). So, apart from first two, the rest are disregarded.  
+
+```{r}
+VlnPlot(ec, features = "percent.ribo", group.by = "orig.ident")
+VlnPlot(ec, features = "percent.ribo", group.by = "AgeGroup")
+VlnPlot(ec, features = c("RPL37","RPS21"), group.by = "AgeGroup")
+
+# How many RPS/RPL genes 
+library(stringr)
+DefaultAssay(ec) <- "RNA"
+rpl_genes <- str_detect(rownames(ec), pattern = "^RPL")
+rps_genes <- str_detect(rownames(ec), pattern = "^RPS")
+ribo_percent <- (sum(rpl_genes) + sum(rps_genes))*100/length(rownames(ec))
+ribo_percent
+```
+
+# GSEA with MSigDB Hallmarks 
+
+
+```{r}
+## Format data
+# Return true/false where gene symbols in grch38 matches that in list of DEGs
+idx <- grch38$symbol %in% rownames(young.markers)
+# Subset for rows in grch38 that matches DEGs 
+ids <- grch38[idx,]
+
+# The gene names can map to more than one Ensembl ID (some genes change ID over time), 
+# so we need to remove duplicate IDs prior to assessing enriched GO terms
+non_duplicates <- which(duplicated(ids$symbol) == FALSE)
+ids <- ids[non_duplicates, ] 
+
+# Add gene column in DEG list 
+young.markers["gene"] <- rownames(young.markers)
+
+# Merge DEGs with subset of table from grch38
+res_ids <- inner_join(young.markers, ids, by=c("gene" ="symbol")) 
+
+# Create dataset containing significant genes 
+sig_ids <- subset(res_ids, p_val_adj < 0.05)
+
+# remove NAs
+res_entrez <- subset(sig_ids, entrez != "NA")
+
+# Remove duplicates 
+res_entrez <- res_entrez[which(duplicated(res_entrez$entrez) == F), ]
+
+# Extract name and fold-changes
+foldchanges <- res_entrez$avg_log2FC
+
+# Name each fold change with the corresponding Entrez ID
+names(foldchanges) <- res_entrez$entrez
+
+# Order in decreasing order
+foldchanges <- sort(foldchanges, decreasing = TRUE)
+
+## Load GMT file downloaded from MSigDB website 
+h <- read.gmt("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/MSigDB_H")
+
+# Hallmarks
+msig_h_young <- GSEA(foldchanges, 
+               TERM2GENE=h,
+               scoreType = "pos",
+               minGSSize = 1,
+               pvalueCutoff = 1,
+               pAdjustMethod = "BH"
+               )
+
+msig_H_result_young <- data.frame(msig_h_young)
+msig_H_tidy_young <- subset(msig_H_result_young, subset = msig_H_result_young$pvalue<0.7)
+
+#Barplot
+ggplot(msig_H_tidy_young, aes(reorder(Description, NES), NES)) + geom_col(aes(fill=p.adjust< 0.2)) + theme_minimal() + coord_flip() + theme(axis.title = element_text(size = 12))
+```
+
+
+## GSEA with MSigDB Gene Onotology
+
+```{r, fig.width=15}
+## Load GMT file downloaded from MSigDB website 
+
+# Hallmarks
+msig_c5_young <- GSEA(foldchanges, 
+               TERM2GENE=c5,
+               scoreType = "pos",
+               minGSSize = 2,
+               pvalueCutoff = 1,
+               pAdjustMethod = "BH"
+               )
+
+msig_C5_result_young <- data.frame(msig_c5_young)
+msig_C5_tidy_young <- subset(msig_C5_result_young, subset = msig_C5_result_young$p.adjust<0.1)
+
+#Barplot
+ggplot(msig_C5_tidy_young[1:20,], aes(reorder(Description, NES), NES)) + geom_col(aes(fill=p.adjust< 0.2)) + theme_minimal() + coord_flip() + theme(axis.title = element_text(size = 12))
+```
+
+
+# Visualisations
+
+
+## Bar Plot showing log2FC 
+
+Can have ribosomal genes removed or retained. 
+
+```{r, fig.width=20, fig.height=6}
+DefaultAssay(ec) <- "RNA"
+Idents(ec) <- "AgeGroup"
+
+all.markers <- FindMarkers(ec,
+                           assay = "RNA",
+                           ident.1 = "Old",
+                           ident.2 = "Young",
+                           only.pos = FALSE, 
+                           min.pct = 0.25, 
+                           logfc.threshold = 0.25,
+                           test.use = "MAST")
+
+# Obtain top 10 enhanced genes in young cells
+all.markers_young <- subset(all.markers, subset= all.markers$avg_log2FC<0)
+all.markers_young <- subset(all.markers_young, subset = (all.markers_young$p_val_adj < 0.05 & all.markers_young$pct.1<0.25& all.markers_young$pct.2>0.25))
+all.markers_young <- all.markers_young[c(-1),] # Remove MKL2
+
+
+# Combine enhanced genes in old and young 
+all.markers <- rbind(old.markers_stringent[1:20,], all.markers_young[1:20,])
+all.markers$gene <- rownames(all.markers)
+all.markers[order(all.markers$avg_log2FC, decreasing = TRUE),]
+all.markers$log10_FDR <- -log10(all.markers$p_val_adj)
+
+#pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/Age_barplot.pdf", width = 15, height = 5)
+
+# Barplot
+ggplot(data = all.markers, aes(x = reorder(gene, -avg_log2FC), y = avg_log2FC, fill = log10_FDR)) + geom_bar(stat="identity")  + theme_light()+ theme(axis.text = element_text(size=13), axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=0.4), legend.text = element_text(size = 12), legend.title = element_text(size = 13), text = element_text(size = 15)) + scale_fill_continuous(type="viridis")
+#dev.off()
+
+```
+
+## DotPlot of enhanced genes in Aged and Young
+
+This plot shows top 10 enhanced genes in young and old.
+
+```{r, fig.height=5, fig.width=12}
+
+markers <- rownames(all.markers)
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/Age_dotplot.pdf", height = 5, width = 12)
+dittoDotPlot(object = ec, 
+             vars = markers, 
+             group.by = "AgeGroup", 
+             scale = F,
+             min.color = "navyblue",
+             max.color = "orangered",
+             size = 10,
+             assay = "RNA") + theme_light() + theme(axis.text = element_text(size=13), legend.text = element_text(size = 12), axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=0.4)) 
+dev.off()
+```
+
+
+
+
+

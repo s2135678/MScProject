@@ -1,0 +1,203 @@
+---
+title: "11_SCT"
+author: "Sera Choi"
+date: "11/07/2021"
+output: html_document
+---
+
+```{r, message=FALSE, warning=FALSE}
+# Load library
+library(Seurat)
+library(ggplot2)
+library(ggsci)
+library(gtools)
+library(dplyr)
+library(here)
+library("scales")
+library(escape)
+library(dittoSeq)
+library(msigdbr)
+library(fgsea)
+library(tibble)
+library(future)
+
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
+mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
+mypal4 <- pal_simpsons(palette = c("springfield"), alpha = 0.7)(16)
+mypal5 <- pal_rickandmorty(palette = c("schwifty"), alpha = 0.7)(6)
+mypal6 <- pal_futurama(palette = c("planetexpress"), alpha = 0.7)(5)
+mypal7 <- pal_startrek(palette = c("uniform"), alpha = 0.7)(5)
+mycoloursP<- c(mypal, mypal2, mypal3, mypal4, mypal5, mypal6, mypal7)
+show_col(mycoloursP, labels =F)
+
+# Set maximum size of the object 
+options(future.global.maxSize = 100000*1024^2)
+```
+
+# Age analysis with SCTransform integrated data
+
+Previous age analysis using integrated data (Luise, Yang, Lau) with CCA integration seemed strange. Here, I use SCT integration and normalisation.
+
+## Merge Luise, Yang and Lau
+
+Here I process ECs from Lau et al using SCT normalisation and integration 
+
+```{r}
+luise <- readRDS("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/Luise_ec.RDS")
+lau <- readRDS("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/Lau_ec.RDS")
+yang <- readRDS("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/yang_capillary_ec.RDS")
+
+# Organise metadata so sample IDs all under column BBN
+lau[["BBN"]] <- lau[["orig.ident"]]
+yang[["BBN"]] <- yang[["orig.ident"]]
+
+# Set orig.ident
+luise[["orig.ident"]] <- "Luise"
+lau[["orig.ident"]] <- "Lau"
+yang[["orig.ident"]] <- "Yang"
+
+# Merge data
+comb <- merge(x = luise, y = c(lau, yang), add.cell.ids = c("Luise", "Lau", "Yang"))
+```
+
+## SCT normalisation and integration
+
+```{r}
+# Set up Seurat object list, run SCTransform oneach object separately
+ec.list <- SplitObject(comb, split.by = "orig.ident")
+for (i in 1:length(ec.list)) {
+    ec.list[[i]] <- SCTransform(ec.list[[i]], verbose = TRUE)
+}
+
+# Select features for downstream integration
+ec.features <- SelectIntegrationFeatures(object.list = ec.list, nfeatures = 2000)
+# Ensures that all necessary Pearson residuals have been calculated 
+ec.list <- PrepSCTIntegration(object.list = ec.list, anchor.features = ec.features, verbose = TRUE)
+
+# identify anchors and integrate datasets 
+ec.anchors <- FindIntegrationAnchors(object.list = ec.list, normalization.method = "SCT", anchor.features = ec.features, verbose = TRUE)
+ec.integrated <- IntegrateData(anchorset = ec.anchors, normalization.method = "SCT", verbose = TRUE)
+```
+
+## Clustering and visualisation 
+
+```{r}
+ec.integrated <- RunPCA(ec.integrated, verbose = FALSE)
+ElbowPlot(ec.integrated)
+
+ec.integrated <- RunUMAP(ec.integrated, dims = 1:20)
+DimPlot(ec.integrated, reduction = "umap", group.by = "BBN", cols=mycoloursP[1:25])
+```
+
+## Downsampling Yang
+
+```{r}
+Idents(yang) <- "BBN"
+reduced_yang <- subset(yang, downsample = 100)
+
+# Merge data
+comb <- merge(x = luise, y = c(lau, reduced_yang), add.cell.ids = c("Luise", "Lau", "Yang"))
+```
+
+## SCT normalisation and integration 
+
+```{r}
+# Set up Seurat object list, run SCTransform oneach object separately
+ec.list <- SplitObject(comb, split.by = "orig.ident")
+for (i in 1:length(ec.list)) {
+    ec.list[[i]] <- SCTransform(ec.list[[i]], verbose = FALSE)
+}
+
+# Select features for downstream integration
+ec.features <- SelectIntegrationFeatures(object.list = ec.list, nfeatures = 2000)
+# Ensures that all necessary Pearson residuals have been calculated 
+ec.list <- PrepSCTIntegration(object.list = ec.list, anchor.features = ec.features, verbose = FALSE)
+
+# identify anchors and integrate datasets 
+ec.anchors <- FindIntegrationAnchors(object.list = ec.list, normalization.method = "SCT", anchor.features = ec.features, verbose = FALSE)
+ec.integrated <- IntegrateData(anchorset = ec.anchors, normalization.method = "SCT", verbose = FALSE)
+
+# Normalise RNA data for visual purposes 
+DefaultAssay(ec.integrated) <- "RNA"
+ec.integrated <- NormalizeData(ec.integrated, verbose = FALSE)
+```
+
+## Quality control
+
+```{r}
+ec.integrated[["percent.mt"]] <- PercentageFeatureSet(ec.integrated, pattern = "^MT-", assay = "RNA")
+VlnPlot(ec.integrated, features = "nFeature_RNA", group.by = "orig.ident", pt.size=0, cols = mycoloursP[1:25])
+VlnPlot(ec.integrated, features = "nCount_RNA", group.by = "orig.ident", pt.size=0, cols = mycoloursP[1:25])
+VlnPlot(ec.integrated, features = "percent.mt", group.by = "orig.ident", pt.size=0,cols = mycoloursP[1:25])
+
+FeatureScatter(ec.integrated, feature1 = "nCount_RNA", feature2 = "percent.mt", group.by = "orig.ident",cols = mycoloursP[1:25])
+FeatureScatter(ec.integrated, feature1 = "nCount_RNA", feature2 = "nFeature_RNA", group.by = "orig.ident",cols = mycoloursP[1:25])
+```
+
+## Clustering and visualisation 
+
+```{r}
+DefaultAssay(ec.integrated) <- "integrated"
+ec.integrated <- RunPCA(ec.integrated, verbose = FALSE)
+ElbowPlot(ec.integrated)
+ec.integrated <- RunUMAP(ec.integrated, dims = 1:20)
+```
+
+```{r}
+
+# Classify age group
+mod_metadata <- ec.integrated@meta.data  %>% mutate(AgeGroup = case_when(Age < 65 ~ 'Young',
+                                                                        Age > 65 ~ 'Old'))
+                                    
+ec.integrated[["AgeGroup"]] <- mod_metadata$AgeGroup
+
+# ribo genes 
+rpl <- PercentageFeatureSet(ec.integrated, pattern = "^RPL", assay = "RNA")
+rps <- PercentageFeatureSet(ec.integrated, pattern = "^RPS", assay = "RNA")
+ec.integrated[["percent.ribo"]] <- rpl+rps
+
+# Individuals 
+DimPlot(ec.integrated, reduction = "umap", group.by = "BBN",cols = mycoloursP[1:25])
+# Dataset
+DimPlot(ec.integrated, reduction = "umap", group.by = "orig.ident",cols = mycoloursP[1:25])
+# Agegroup
+DimPlot(ec.integrated, reduction = "umap", group.by = "AgeGroup",cols = mycoloursP[1:25])
+# Tissue 
+mod_metadata <- ec.integrated@meta.data  %>% mutate(Tissue = case_when(orig.ident == "Luise" ~ 'BA4',
+                                                            orig.ident == "Lau" ~ "Prefrontal cortex",
+                                                            orig.ident == "Yang" ~ "Superial frontal cortex"))
+                                    
+ec.integrated[["Tissue"]] <- mod_metadata$Tissue
+DimPlot(ec.integrated, reduction = "umap", group.by = "Tissue",cols = mycoloursP[1:25])
+
+# number of unique genes 
+FeaturePlot(ec.integrated, features = "nFeature_RNA")
+FeaturePlot(ec.integrated, features = "nCount_RNA")
+FeaturePlot(ec.integrated, features = "percent.mt")
+FeaturePlot(ec.integrated, features = "percent.ribo")
+
+# Save RDS
+saveRDS(ec.integrated, "/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/SCT_ec")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

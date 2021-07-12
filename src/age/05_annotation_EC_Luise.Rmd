@@ -1,0 +1,386 @@
+---
+title: "05_annotation_EC_Luise"
+author: "Sera Choi"
+date: "27/05/2021"
+output: html_document
+---
+
+```{r, message=FALSE, warning=FALSE,echo = FALSE}
+# Load library
+library(Seurat)
+library(ggplot2)
+library(dplyr)
+library(here)
+library("scales")
+library(ggsci)
+library(gtools)
+
+# Load data
+ecpc <- readRDS(here("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/ecpc04.RDS")) 
+
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
+mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
+mypal4 <- pal_simpsons(palette = c("springfield"), alpha = 0.7)(16)
+mypal5 <- pal_rickandmorty(palette = c("schwifty"), alpha = 0.7)(6)
+mypal6 <- pal_futurama(palette = c("planetexpress"), alpha = 0.7)(5)
+mypal7 <- pal_startrek(palette = c("uniform"), alpha = 0.7)(5)
+mycoloursP<- c(mypal, mypal2, mypal3, mypal4, mypal5, mypal6, mypal7)
+show_col(mycoloursP, labels =F)
+```
+
+# New Hypothesis Testing
+
+Previous analysis could not identify clusters based on large vessel-types (artery and vein), which is somewhat expected as BA4 should contain microvessel ECs (capillary or even arterioles and venuoles). Therefore, this section attempts to test two ideas:
+
+* 1. Are these ECs from microvessels? Can we identify using known capillary markers (humans and mice)? And if not, can we characterise the ECs in the dataset further? 
+* 2. Is cluster 2 interesting? Are they from diseased samples (i.e. sepsis)? Why are they clustering? 
+
+## Subset for ECs only. 
+
+After subsetting for ECs only, the dataset contains 573 cells. 
+
+```{r, message=FALSE, warning=FALSE}
+# Subset for ECs only
+ec <- subset(ecpc, ident=c("Endothelial_1", "Endothelial_2"))
+
+# Feature Selection
+ec <- FindVariableFeatures(ec, selection.method = "vst", nfeatures=2000)
+
+# Scale data
+all.genes <- rownames(ec)
+ec <- ScaleData(ec, features = all.genes)
+
+# Dimentionality reduction
+ec <- RunPCA(ec, features= VariableFeatures(ec))
+print(ec[["pca"]], dims = 1:5, nfeatures = 5)
+DimPlot(ec, reduction='pca')
+ElbowPlot(ecpc, ndims = 50)
+
+# Clustering at different resolutions
+ec <- FindNeighbors(ec, dims = 1:25)
+# test different resolutions for clustering
+ec <- FindClusters(ec, resolution = c(seq(from = 0.1, to = 1, by = 0.05)))
+ec <- RunUMAP(ec, dims = 1:25)
+
+#Generate DimPlot of all tested clustering resolutions in metadata
+# requires gtools library and Seurat
+plot_list_func <- function(seur_obj,
+                           col_pattern,
+                           clust_lab = TRUE,
+                           label_size = 8,
+                           num_col = 4){
+  # finds column with additional resolution clusterings
+  extr_res_col <- grep(pattern = col_pattern, names(seur_obj@meta.data))
+  # obtain column names
+  res_names <- names(seur_obj@meta.data[extr_res_col])
+  
+  # gtools function, sorts gene_names alphanumeric:
+  res_names <- mixedsort(res_names) 
+  plot_l <-list()
+  
+  for(i in 1: length(res_names)){
+  dim_plot <- DimPlot(seur_obj, 
+                      reduction = "umap", 
+                      group.by = res_names[i],
+                      label = clust_lab,
+                      label.size = label_size) + NoLegend()
+  print(dim_plot)
+ }
+}
+
+plot_list_func(seur_obj = ec,
+               col_pattern = "RNA_snn_res.")
+```
+
+## Microvessel gene markers
+
+Ideally, we would like human brain microvessel EC gene markers. However, this has not been established in current studies. If microvessel EC gene markers have been found and validated, they are from mouse brain tissues and only lung and heart microvessel EC gene markers have been identified. On top of this, we also need to take into account that 10x has poor ability to detect very lowly expressed genes. Gene markers identified in 3 studies were used (some verified, some not):
+
+1. Human brain microvessel-enriched genes compared to the whole brain (bulk RNA-seq and not verified)
+2. Single cell atlas of ECs of human lung
+3. Single cell atlas of ECs of mouse brain 
+
+### 1. Human brain microvessel-enriched genes 
+
+To understand the identity of ECs in the dataset, microvessel gene markers were found from the literature (transcriptomic comparison of human and mouse brain microvessels, 2020). This study uses lectins to specifically isolate brain microvessel ECs (Laser Capture Microdissection) before bulk RNA sequencing and identifies brain microvessel-enriched genes by comparing to the whole brain transcriptome. However, the whole brain transcriptome is not specific to large vessels, but it also includes neurones and glial cells. These gene markers have not been validated in wet lab.   
+
+10 highest confidence of microvessel-enriched genes compared to the whole brain include:
+
+* Human: RGS5, FLT1, PODXL, NET1 ,TAGLN2 ,VWF ,ADGRL4 ,FN1 ,ITM2A ,ATP10A
+
+These gene markers were identified with DE analysis and has not been validated through imaging. Appears that most cells express microvessel-enriched genes. RGS5 is not expressed by ECs because it is expressed by pericytes. The study has labelled both ECs and pericytes as 'microvessel'. 
+
+```{r, fig.width= 15, fig.height= 13, message=FALSE}
+
+# Human Microvessel gene markers on EC population
+FeaturePlot(ec, features = c("RGS5", 
+                             "FLT1", 
+                             "PODXL", 
+                             "NET1", 
+                             "TAGLN2", 
+                             "VWF", 
+                             "ADGRL4",
+                             "FN1",
+                             "ITM2A",
+                             "ATP10A"))
+```
+
+### 2. Human Lung ECs gene markers 
+
+Recent study (Integrated Single Cell Atlas of Endothelial Cells of the Human Lung, 2020) has characterised diveristy of human lung ECs by identifying marker genes and validating through immunohistochemistry and in situ hybridisation. Note that not all gene markers were validated.   
+
+* Arterial ECs: EFNB2, SOX17, BMX, SEMA3G, HEY1, LTBP4, FBLN5, GJA5, GJA4
+* Capillary ECs: ARHGAP6, IFI27, PREX1, PRKCE, SGK1, SH2D3C, SORBS1, PRX, SPARC, EMP2, ITGA1, SLC9A3R2, AFF3
+* Venous ECs: NR2F2, VCAM1, ACKR1, SELP 
+
+
+#### Arterial 
+```{r, fig.width= 15, fig.height= 13, message=FALSE}
+FeaturePlot(ec, features = c('EFNB2', 'SOX17', 'BMX', 'SEMA3G', 'HEY1', 'LTBP4',' FBLN5', 'GJA5', 'GJA4'))
+```
+
+#### Capillary 
+```{r, fig.width= 15, fig.height= 13, message=FALSE}
+FeaturePlot(ec, features = c('ARHGAP6', 'IFI27', 'PREX1', 'PRKCE', 'SGK1',' SH2D3C', 'SORBS1', 'PRX', 'SPARC', 'EMP2', 'ITGA1', 'SLC9A3R2','AFF3'))
+```
+
+#### Vein  
+```{r, fig.width= 15, fig.height= 13, message=FALSE}
+FeaturePlot(ec, features = c('NR2F2', 'VCAM1', 'ACKR1' ))
+```
+
+Appears that capillary-enriched genes are more expressed by ECs in the dataset than artery or vein enriched gene markers. Although the first study conducted bulk RNAseq and second study was based on human lung ECs, I have enough confidence that all ECs in this dataset belong to microvessels. This also agrees with the fact that white matter of BA4 region is mostly made up of microvessels. 
+
+### 3. Mouse brain EC gene markers 
+
+Recent study "Single-Cell Transcriptome Atlas of Murine Endothelial Cells" (2020) has characterised heterogeneity of ECs in mouse brain tissue using single-cell RNA-seq analysis. 
+
+Top 10 marker genes of vessel-type in brain tissue:
+
+* Large Artery: Mgp, Cytl1, Fbln5, Clu, Eln, Bgn, Igfbp4, Cfh, Lmcd1, Bpgm
+* Artery: Gkn3, Egfl8, Vegfc ,Hrct1 ,Cdkn1c,Eps8l2,Alpl,Hey1,Edn3,Mgst1
+* Capillary Arterial: Glul,Rad54b,Tuba1a,Tgfb2,Slc26a10,Stmn1,Akap12,Klf6,Dusp1,Zfp771
+* Capillary: Cxcl12,Spock2,Gm9946,Lrrn3,Gstm7,Palm,Tbx3,Prdm16,Rasgrp2,Cd83
+* Capillary Venous: Car4,Gatm,Itm2a,Hmcn1,Slc7a1,Nkd1,Hspa1a,Smox,Slc31a1,Slc39a8
+* Large Vein: Tmsb10,Vcam1,Slc38a5,Icam1,Tmem252,Lcn2,Vwf,Ctsc,Tgm2,Ackr1
+
+#### Large Artery 
+
+* Removed CYTL1 because...?  
+
+```{r, fig.width= 15, fig.height= 13, message=FALSE}
+markers <- c("Mgp", "Cytl1", "Fbln5", "Clu", "Eln", "Bgn", "Igfbp4", "Cfh", "Lmcd1", "Bpgm")
+FeaturePlot(ec, features = toupper(markers))
+```
+
+#### Artery 
+
+```{r, fig.width= 15, fig.height= 13, message=FALSE}
+markers <- c('Gkn3', 'Egfl8', 'Vegfc' ,'Hrct1' ,'Cdkn1c','Eps8l2','Alpl','Hey1','Edn3','Mgst1')
+FeaturePlot(ec, features = toupper(markers))
+```
+
+#### Capillary Arterial
+
+```{r, fig.width= 15, fig.height= 13, message=FALSE}
+markers <- c('Glul','Rad54b','Tuba1a','Tgfb2','Slc26a10','Stmn1','Akap12','Klf6','Dusp1','Zfp771')
+FeaturePlot(ec, features = toupper(markers))
+```
+
+#### Capillary 
+
+```{r, fig.width= 15, fig.height= 13, message=FALSE}
+markers <- c('Cxcl12','Spock2','Gm9946','Lrrn3','Gstm7','Palm','Tbx3','Prdm16','Rasgrp2','Cd83')
+FeaturePlot(ec, features = toupper(markers))
+```
+
+#### Capillary Venous
+
+```{r, fig.width= 15, fig.height= 13, message=FALSE}
+markers <- c('Car4','Gatm','Itm2a','Hmcn1','Slc7a1','Nkd1','Hspa1a','Smox','Slc31a1','Slc39a8')
+FeaturePlot(ec, features = toupper(markers))
+```
+
+#### Large Vein 
+
+```{r, fig.width= 15, fig.height= 13, message=FALSE}
+markers <- c('Tmsb10','Vcam1','Slc38a5','Icam1','Tmem252','Lcn2','Vwf','Ctsc','Tgm2','Ackr1')
+FeaturePlot(ec, features = toupper(markers))
+```
+
+### Conclusion 
+
+Using vessel-specific gene markers from mouse brain are not fitted for identifying heterogenity in EC population.
+
+
+# Investigation into cluster 2
+ 
+## Proportion of cells from each sample in different clusters 
+
+Appears that cluster 2 is made up of 8 samples, with most cells coming from two samples (1.30841 and BBN14396)
+
+```{r}
+Idents(ec) <- "RNA_snn_res.0.2"
+
+DimPlot(ec, reduction='umap',group.by = "AgeGroup")
+DimPlot(ec, reduction='umap',group.by = "gender")
+DimPlot(ec, reduction='umap',group.by = "BBN")
+
+# Proportion of cells from each samples in different clusters
+prop_samples <- prop.table(table(Idents(ec), ec$BBN), margin=1)
+prop_samples <- as.data.frame(prop_samples)
+colnames(prop_samples) <- c("cluster", "samples", "proportion")
+
+# Plot a barplot 
+ggplot(as.data.frame(prop_samples), aes(x=cluster, y=proportion, fill= samples)) + geom_bar(stat="identity")+ theme_classic() + scale_fill_manual(values=mycoloursP[1:20])
+
+```
+
+### Proportion of cells by cause of death 
+
+It could be the cause of death that caused distress to ECs in cluster 2. So here, I looked into causes of deaths of individuals that contribute cells to cluster 2. Heart disease contribution from two individuals (1.29824 and 1.30841 )
+
+```{r}
+# Proportion of cells from each samples in different clusters
+prop_CauseOfDeath <- prop.table(table(Idents(ec), ec$CauseOfDeath_category), margin=1)
+prop_CauseOfDeath <- as.data.frame(prop_CauseOfDeath)
+colnames(prop_CauseOfDeath) <- c("Cluster", "Cause_of_Death", "Proportion")
+
+# Plot a barplot 
+ggplot(as.data.frame(prop_CauseOfDeath), aes(x=Cluster, y=Proportion, fill= Cause_of_Death)) + geom_bar(stat="identity")+ theme_classic() + scale_fill_manual(values=mycoloursP[1:20])
+```
+
+Appears that most cells from individual (BBN14396) whose death is 'unascertained' contributes to cluster 2. This makes it difficult to find the identity of cells in cluster 2. My first guess would be damanged or dysfunctional ECs. 
+
+```{r}
+# Proportion of cells from each samples in different clusters
+prop_CauseOfDeath_1 <- prop.table(table(Idents(ec), ec$CauseOfDeath_1a), margin=1)
+prop_CauseOfDeath_1 <- as.data.frame(prop_CauseOfDeath_1)
+colnames(prop_CauseOfDeath_1) <- c("Cluster", "Cause_of_Death", "Proportion")
+
+# Plot a barplot 
+ggplot(as.data.frame(prop_CauseOfDeath_1), aes(x=Cluster, y=Proportion, fill= Cause_of_Death)) + geom_bar(stat="identity")+ theme_classic() + scale_fill_manual(values=mycoloursP[1:20])
+```
+
+
+# Cluster 2 makers 
+
+Difficult to identify characteristics of cells in cluster 2 with cause of death. Here, I investigated into top 10 significant DEGs. 
+
+*ADAMTS9*
+
+* anti-angiogenic metalloprotease (PMID: 20093484)
+* expressed in peri-ischemic area 4 days after cerebral ischemia. ADAMTS proteases cleave ECM components. After ischemia, ADAMTS proteases first degrade ECM to a more juvenile matrix type, then ECM is reconstructed (DOI: 10.1161/CIRCULATIONAHA.114.013003.)
+
+*TIMP1*
+
+* During endothelial barrier disruption such as TBI and ischemia, TIMP1 acts as extracellular signal inducer that regulates the BBB by interacting with CD63/integrin-beta-1 complex. TIMP1 inhibits RhoA and stabilises cytoskeleton, providing protection against BBB disruption. This maintains the EC morphology and junctional protein integrity (PMID: 32642407)
+
+*COL4A1 and COL4A2*
+
+* SNP in COL4A2 gene is associated with increased risk of coronoary heart disease (https://doi.org/10.1371/journal.pgen.1006127)
+* COL4A1 and COL4A2 are the main extracellular matrix molecules that form the basement membrane (space between ECs and pericytea). Mutations in COL4A1 and COL4A2 genes are associated with intracerebral hemorrhage (DOI: 10.1161/CIRCULATIONAHA.114.013395.) 
+* Perhaps upregulated to form the basement membrane after some disruption? 
+* More 
+
+*SLC4A7*
+
+* SLC4A7 is a sodium bicarbonate co-transporter 
+* In rat, SLC4A5 suppresses ischemia-induced activation of apoptosis in coronary EC (https://doi.org/10.1093/cvr/cvq330)
+
+*CXCL8*
+
+* Interleukin 8 has angiogenetic effect in human intestinal microvessel ECs (PMID: 12496258)
+* During ischemic stroke, interleukin 8 is involved in neuroinflammation 
+
+*SELE*
+
+* E-selectin is an endothelial adhesion molecule involved in binding and targeting of neutrophils 
+* E-selectin is expressed in ECs during inflammation (Markers of Endothelial Cells in Normal and Pathological Conditions, 2019)
+
+```{r,fig.width= 15, fig.height= 13, message=FALSE}
+# This function takes result from DE analysis and creates feature plots 
+DEG_feature_plot_func <- function(seur_object,
+                                  markers){
+  
+  # Converts data.frame into string of DEGs
+  gene.markers <- as.character(as.matrix(markers))
+  
+  # Create feature plot using makers 
+  feat_plot <- FeaturePlot(seur_object, 
+                           features = c(gene.markers))
+  print(feat_plot)
+}
+
+Idents(ec) <- "RNA_snn_res.0.2"
+clust2_markers <- FindMarkers(ec, 
+                              ident.1 = 2,
+                              ident.2 = c(0,1),
+                              only.pos = TRUE, 
+                              min.pct = 0.25, 
+                              logfc.threshold = 0.25,
+                              test.use = "MAST")
+
+clust2_markers_top10 <- rownames(clust2_markers)[1:10]
+DEG_feature_plot_func(ec, clust2_markers_top10)
+```
+
+```{r,fig.width= 10, fig.height= 8}
+FeaturePlot(ec, features=c("ICAM1","VCAM1"))
+```
+
+### Conclusion
+
+Cells in cluster 2 appear to express genes associated with EC disruption and ischemia. This result is consistent with the study (Brain Endothelial Cells Are Exquisite Sensors of Age-Related Circulatory Cues, 2020) which found that "common perturbed pathways across vessel segments, including upregulation of interleukin and interferon (IFN) signaling, cytoskeletal remodeling, cell-ma- trix adhesion, and transforming growth factor b (TGF-b) signaling, as well as the downregulation of proliferation,..." during inflammation. MFSD2A??  
+
+```{r}
+# Save annotated RDS 
+saveRDS(ec, "/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/ec05.RDS")
+```
+
+## Additional stuff
+
+Arterivenous differentiation occurs during embryonic development and differentiation of angioblasts leads to formation of network of arteries, veins and capillaries. Notch signalling pathway appears to have importance in deciding the cell fate. Several genes in nothch pathway are up-regulated in arterial ECs than venous ECs. Hey2 is a downstream target of Notch signalling exclusively expressed in arterial ECs, while COUP-TFII (NR2F2) is exclusively expressed in venous ECs (Impact of Hey2 and COUP-TFII on genes involved in arteriovenous differentiation in primary human arterial and venous endothelial cells, 2013). 
+
+### Artery 
+
+No distinct clusters express arterial gene markers. Interestingly, pericytes are expressing more arterial gene markers than cells in EC population. Expression of HEY2 is increased with Notch signal pathway. Maybe HEY2 is required during angiogenesis but for fully differenciated arterial ECs, HEY2 isn't expressed. Potentially, the same for GJA4. 
+
+```{r,fig.width=10, fig.height=5}
+Idents(ec) <- "RNA_snn_res.0.3"
+FeaturePlot(ec, features = c("HEY2", "GJA4"))
+```
+
+#### Notch3 communication between ECs and pericytes 
+
+It could be that pericytes are expressing HEY2 because of communication between ECs and pericytes. DLL4 is a Notch ligand expressed by ECs. DLL4 binds to NOTCH3 receptors on pericytes, which increases downstream genes, HEY2 and HEYL. Enhanced Notch3 signalling in pericytes enhanced adhesion strength of pericytes to ECs and decreased migratory ability.  This study was down in human brain pericytes. (Cerebral Cavernous Malformation-1 Protein Controls DLL4-Notch3 Signaling Between the Endothelium and Pericytes, 2015).
+
+So, perhaps HEY2 expression isn't sustained after fully differentiating and the expression of HEY2 in pericyte is to do with communication between pericytes and ECs. 
+
+```{r,fig.width=10, fig.height=6}
+FeaturePlot(ec, feature= c("DLL4",
+                             "NOTCH3",
+                             "HEY2",
+                             "HEYL"))
+```
+
+
+### Vein
+
+NR2F2 (COUP-TFII) is a well-known venous EC marker during angiogenesis. However, again it is expressed in pericyte population more than EC population. This may be because NR2F2 level is no longer sustained after differentiation. I think NR2F2 is involved in communication with ECs. 
+
+```{r,fig.width=10, fig.height=5}
+FeaturePlot(ec, features = c('NR2F2', 'EMCN'))
+```
+
+#### Communication between Pericyte and ECs
+
+NR2F2 is expressed by pericytes, which increases expression of ANGPT1 (paracrine ligand specific for endothelium-specific tyrosine kinase receptor TEK). (The role of the orphan nuclear receptor COUP-TFII in tumorigenesis, 2015).  
+
+```{r,fig.width=10, fig.height=6}
+FeaturePlot(ec, feature=c("NR2F2",
+                            "ANGPT1",
+                            "TEK"))
+```
+

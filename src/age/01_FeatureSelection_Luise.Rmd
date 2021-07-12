@@ -1,0 +1,50 @@
+---
+title: "01_FeatureSelection_Luise"
+author: "Sera Choi"
+date: "14/05/2021"
+output: html_document
+---
+
+## Feature selection of Luise's dataset 
+
+* After quality control, normalisation and integration steps were skipped because the dataset has been normalised and stringent experimental design has minimised batch effect 
+* Feature selection aims to select genes that carry most interesting biological information, while eliminating those that introduce noise 
+
+```{r, message=FALSE, warning=FALSE}
+# Load library
+library(Seurat)
+library(ggplot2)
+library(dplyr)
+library(here)
+library(scran)
+
+# Load data
+ecpc <- readRDS(here("data/processed/ecpc00.RDS")) 
+```
+
+## Feature selection 
+Feature selection aims to select genes that carry most interesting biological information while eliminating those that introduce noise. Seurat feature selection function learns mean-variance relationship from the data and computes estimated variance of each gene given the mean. Using this estimated variance, variance-stabilising transformation is performed to standardise the value of a gene. Then, for each gene, variance of standardised value across all cells is calculated and ranked. Top 2000 genes with highest variance given mean are subsetted and stored in VariableFeatures(ecpc). 
+
+Top 10 HVGs are printed, which are also labelled in the plot below. 
+
+```{r, fig.width=10, fig.height=3, warning=FALSE, message=FALSE}
+# VariableFeatures(ecpc) contains top 2000 highly variable genes 
+ecpc <- FindVariableFeatures(ecpc, selection.method = "vst", nfeatures=2000)
+
+# Identify top 10 HVGs
+top10 <- head(VariableFeatures(ecpc), 10)
+top10
+```
+
+## Feature Selection plot 
+Here, I plotted mean-variance relationship of genes, with top 2000 HVGs highlighted in red. x-axis annotation: 0.01, 1, 100 
+
+```{r, fig.width=10, fig.height=3, warning=FALSE, message=FALSE}
+# Plot variable features with and without labels 
+plot1 <- VariableFeaturePlot(ecpc)
+plot2 <- LabelPoints(plot = plot1, points = top10, repel = TRUE)
+plot1 + plot2
+
+# Update Seurat object 
+saveRDS(ecpc, "/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/ecpc01.RDS")
+```

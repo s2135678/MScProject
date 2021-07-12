@@ -1,0 +1,457 @@
+---
+title: "09_integration_age"
+author: "Sera Choi"
+date: "04/07/2021"
+output: html_document
+---
+
+```{r, message=FALSE, warning=FALSE}
+# Load library
+library(Seurat)
+library(ggplot2)
+library(ggsci)
+library(gtools)
+library(dplyr)
+library(here)
+library("scales")
+library(escape)
+library(dittoSeq)
+library(msigdbr)
+library(fgsea)
+library(tibble)
+library(future)
+
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
+mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
+mypal4 <- pal_simpsons(palette = c("springfield"), alpha = 0.7)(16)
+mypal5 <- pal_rickandmorty(palette = c("schwifty"), alpha = 0.7)(6)
+mypal6 <- pal_futurama(palette = c("planetexpress"), alpha = 0.7)(5)
+mypal7 <- pal_startrek(palette = c("uniform"), alpha = 0.7)(5)
+mycoloursP<- c(mypal, mypal2, mypal3, mypal4, mypal5, mypal6, mypal7)
+show_col(mycoloursP, labels =F)
+
+# Set maximum size of the object 
+options(future.global.maxSize = 100000*1024^2)
+```
+
+# Integration of ECs and age analysis 
+
+This section integrates ECs from other datasets (Luise, Yang and Lau) and conducts age analysis on the integrated dataset. 
+
+```{r}
+luise <- readRDS("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/Luise_ec.RDS")
+lau <- readRDS("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/Lau_ec.RDS")
+yang <- readRDS("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/yang_capillary_ec.RDS")
+
+# Organise metadata so sample IDs all under column BBN
+lau[["BBN"]] <- lau[["orig.ident"]]
+yang[["BBN"]] <- yang[["orig.ident"]]
+
+# Set orig.ident
+luise[["orig.ident"]] <- "Luise"
+lau[["orig.ident"]] <- "Lau"
+yang[["orig.ident"]] <- "Yang"
+
+# Merge data
+comb <- merge(x = luise, y = c(lau, yang), add.cell.ids = c("Luise", "Lau", "Yang"))
+```
+
+## Luise's age gap 
+
+Bar chart showing the number of cells per age. Luise defined young as 30-45 and old as 60-75. The number of cells is pretty balanced with 319 in young and 254 in old. 
+
+```{r}
+
+cells_per_age <- table(luise@meta.data$Age)
+cells_per_age <- as.data.frame(cells_per_age)
+colnames(cells_per_age) <- c("Age", "NumberOfCells")
+
+ggplot(cells_per_age, aes(x = Age, y = NumberOfCells)) + geom_bar(stat = "identity",fill = mycoloursP[4]) + theme_classic() 
+```
+
+## Combined data age distribution
+
+After integrating Yang and lau's ECs, young will be 30-65 (4,258 cells) and old 70-90 (7,367 cells). 
+
+```{r}
+Idents(comb) <- "orig.ident"
+cells_per_age <- table(Idents(comb), comb@meta.data$Age)
+cells_per_age <- as.data.frame(cells_per_age)
+colnames(cells_per_age) <- c("Dataset","Age", "NumberOfCells")
+idx <- which(grepl("^0", cells_per_age$NumberOfCells))
+cells_per_age <- cells_per_age[-c(idx),]
+
+# Barplot
+cells_per_age %>%
+  mutate(ageGroup = ifelse( as.numeric(as.character(cells_per_age$Age)) < 65, "AA (4,258 nuclei)", "Old (7,367 nuclei)")) %>%
+ggplot(aes(x = Age, y = NumberOfCells, fill = Dataset)) + geom_bar(stat = "identity") + theme_light () +scale_fill_manual(values=mycoloursP[3:20]) + facet_wrap(~ ageGroup, scales = "free_x", strip.position = "bottom")
+```
+
+# CCA integration
+
+Integration of Luise, Yang and Lau. However, Yang's data doesn't seem to integrate well with other data because there are too many cells. 
+The four individuals from Yang's data cluster separately to others. 
+
+```{r, fig.height=5, fig.width=8}
+# Integration
+# Split Seurat object into 4 objects corresponding to each sample 
+comb.list <- SplitObject(comb, split.by = "orig.ident")
+
+# Normalise and identify HVGs for each dataset independently
+comb.list <- lapply(X = comb.list, FUN = function(x) {
+    x <- NormalizeData(x)
+    x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 2000)
+})
+
+# select features that are repeatedly variable across datasets for integration
+features <- SelectIntegrationFeatures(object.list = comb.list)
+comb.anchors <- FindIntegrationAnchors(object.list = comb.list, anchor.features = features, dims = 1:20)
+integrated <- IntegrateData(anchorset = comb.anchors, dims=1:20)
+
+DefaultAssay(integrated) <- "integrated" 
+
+# Feature Selection and Scaling 
+integrated <- FindVariableFeatures(integrated, selection.method = "vst", nfeatures = 2000)
+all.genes <- rownames(integrated)
+integrated <- ScaleData(integrated, features = all.genes)
+
+# Linear dimensional reduction 
+integrated <- RunPCA(integrated, features = VariableFeatures(object = integrated))
+ElbowPlot(integrated, ndims = 50)
+
+# Visualisation
+integrated <- RunUMAP(integrated, dims = 1:20)
+DimPlot(integrated, reduction = "umap", group.by = "BBN", cols=mycoloursP[1:25])
+FeaturePlot(integrated, features = "FLT1")
+```
+
+## Downsampling Yang's data
+
+Yang's dataset doesn't seem to integrate very well. This may be because there are too many cells compared to other datasets. 
+This section attempts to extract 100 random cells from each donor. 
+
+```{r}
+Idents(yang) <- "BBN"
+reduced_yang <- subset(yang, downsample = 100)
+```
+
+### Integration using downsample Yang et al dataset
+
+After using downsampled Yang's data, much better integration. The split between young and old are much more balanced with young (519 cells) and old (656 cells).
+
+```{r, fig.height=5, fig.width=8}
+
+# Merge data
+comb_reduced <- merge(x = luise, y = c(lau, reduced_yang), add.cell.ids = c("Luise", "Lau", "Yang"), merge.data = TRUE)
+
+# Classify age group
+mod_metadata <- comb_reduced@meta.data  %>% mutate(AgeGroup = case_when(Age < 65 ~ 'Young',
+                                                                        Age > 65 ~ 'Old'))
+                                    
+comb_reduced[["AgeGroup"]] <- mod_metadata$AgeGroup
+
+comb_reduced <- readRDS("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/integrated_ec.RDS")
+
+Idents(comb_reduced) <- "orig.ident"
+cells_per_age <- table(Idents(comb_reduced), comb_reduced@meta.data$Age)
+cells_per_age <- as.data.frame(cells_per_age)
+colnames(cells_per_age) <- c("Dataset","Age", "NumberOfCells")
+idx <- which(grepl("^0", cells_per_age$NumberOfCells))
+cells_per_age <- cells_per_age[-c(idx),]
+
+# Barplot
+cells_per_age %>%
+  mutate(ageGroup = ifelse( as.numeric(as.character(cells_per_age$Age)) < 65, "AA (519 nuclei)", "Old (656 nuclei)")) %>%
+ggplot(aes(x = Age, y = NumberOfCells, fill = Dataset)) + geom_bar(stat = "identity") + theme_light () +scale_fill_manual(values=mycoloursP[3:20]) + facet_wrap(~ ageGroup, scales = "free_x", strip.position = "bottom")
+```
+
+## Integration with downsampled Yang
+
+After downsampling, the data was integrated using CCA. The integrated data seem much better. 
+
+```{r, fig.width=8}
+# Split Seurat object into 4 objects corresponding to each sample 
+comb_reduced.list <- SplitObject(comb_reduced, split.by = "orig.ident")
+
+# Normalise and identify HVGs for each dataset independently
+comb_reduced.list <- lapply(X = comb_reduced.list, FUN = function(x) {
+    x <- NormalizeData(x)
+    x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 2000)
+})
+
+# select features that are repeatedly variable across datasets for integration
+features <- SelectIntegrationFeatures(object.list = comb_reduced.list)
+comb_reduced.anchors <- FindIntegrationAnchors(object.list = comb_reduced.list, anchor.features = features, dims = 1:20)
+integrated_reduced <- IntegrateData(anchorset = comb_reduced.anchors, dims=1:20)
+
+DefaultAssay(integrated) <- "integrated" 
+
+# Feature Selection and Scaling 
+integrated_reduced <- FindVariableFeatures(integrated_reduced, selection.method = "vst", nfeatures = 2000)
+all.genes <- rownames(integrated_reduced)
+integrated_reduced <- ScaleData(integrated_reduced, features = all.genes)
+
+# Linear dimensional reduction 
+integrated_reduced <- RunPCA(integrated_reduced, features = VariableFeatures(object = integrated_reduced))
+ElbowPlot(integrated_reduced, ndims = 50)
+
+# Visualisation
+integrated_reduced <- RunUMAP(integrated_reduced, dims = 1:20)
+DimPlot(integrated_reduced, reduction = "umap", group.by = "BBN", cols=mycoloursP[1:25])
+DimPlot(integrated_reduced, reduction = "umap", group.by = "AgeGroup", cols=mycoloursP[1:25])
+DimPlot(integrated_reduced, reduction = "umap", group.by = "Tissue", cols=mycoloursP[1:25])
+
+```
+
+### Arterial, capillary, venuous ECs using Yang's gene markers 
+
+I thought perhaps, with increased cell depth, arterial, capillary and venous ECs could be identified using gene markers Yang used. However, still not a clear distinction. Perhaps venous ECs is clear. 
+
+```{r, fig.width=10, fig.height=6}
+# Arterial
+FeaturePlot(integrated_reduced, features = c('ARL15', 'VEGFC', 'BMP6'))
+
+# Capillary
+FeaturePlot(integrated_reduced, features= c('SLC7A1','ABCB1','SLC7A5'))
+
+# Vein
+FeaturePlot(integrated_reduced, features= c('TSHZ2','AFF3','LINC02147'))
+```
+
+### Save RDS
+
+```{r}
+saveRDS(integrated_reduced, "/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/integrated_ec.RDS")
+```
+
+
+# Differential gene expression analysis with age
+
+## Enhanced in Aged cells 
+
+Previously using only Luise's dataset, only 8 gene were identified to be enhanced in aged cells. However, with increased cell depth, many more cells are identified to be enhanced. Overall 208 DEGs were identified. Of these, 50 were statistically significant (<0.05). I reduced the list furtherby setting thresholds:
+
+* adjusted p-value < 0.05
+* pct.1 > 25%
+* pct.2 < 25%
+* logFC > 0.25
+
+Giving, overall 30 genes that are enhanced in aged ECs. 
+
+### MKL1 and MKL2 (EndMT)
+
+* MKL1 promotes endothelial-to-mesenchymal transtition (MKL1 promotes endothelial-to-mesenchymal transition and liver fibrosis by activating TWIST1 transcription). 
+* Hypoxia induces MKL1 expression, which activates endothelin-1 (ET-1). Increased ET-1 induces pulmonary hypertension. (PMID: 23625963)
+* Inflammatory mediators are kwnon to activate different signalling pathways involved in EndoMT including NFkb and TGF-b. 
+* MKL2 seen up-regulated in aged mouse hippocampus 
+
+
+## Conclusion
+
+With age, damage to brain increases (hypoxia, senescent cells). I hypothesise that ageing has effects on regeneration. Correctly regulated mechanisms that facilitate wound closure occurs in healthy young brains. But for aged ECs, dysregulation of regenerative mechanisms accummulate and lead to subsequent diseases. My interest lies in angiogenesis and endothelial-mesychemal transition and inflammation.
+
+I think, some sort of damage occurs in the brain which requires regneration. This damage and build up of senescent cells gives rise to chronic inflammation where by pro-inflammatory cytokines are released. This inflammation has direct and indirect effects towards ECs. 
+
+* Direct: ECs are constantly activated with interleukin, causing dysfunctional EC and pathological angiogenesis (https://doi.org/10.3389/fimmu.2018.00294)
+* Indirect: increased inflmmation induces EndMT, which promotes BEC dysfunction (https://doi.org/10.3389/fimmu.2018.00294, Inflammation-induced endothelial to mesenchymal transition promotes brain endothelial cell dysfunction and occurs during multiple sclerosis pathophysiology)
+
+As well as inflammation, hypoxia has also shown to induce EndMT ()
+
+
+```{r, fig.height=13, fig.width=15}
+Idents(integrated_reduced) <- "AgeGroup"
+
+old.markers <- FindMarkers(integrated_reduced,
+                           assay = "RNA",
+                           ident.1 = "Old",
+                           ident.2 = "Young",
+                           only.pos = TRUE, 
+                           min.pct = 0.25, 
+                           logfc.threshold = 0.25,
+                           test.use = "MAST")
+old.markers
+
+old.markers <- subset(old.markers, old.markers$p_val_adj < 0.05 )
+old.markers_sig <- subset(old.markers, subset =(old.markers$p_val_adj < 0.05 & old.markers$pct.1 > 0.25 & old.markers$pct.2 < 0.25))
+
+old.markers_sig
+VlnPlot(integrated_reduced, assay = "RNA", features = rownames(old.markers_sig)[1:12], group.by = "AgeGroup", pt.size = 0)
+
+VlnPlot(integrated_reduced, assay = "RNA", features = "TWIST1", group.by = "AgeGroup", pt.size = 0)
+
+```
+
+## Endothelial-mesenchymal transition
+
+EndMT transition is characterised by increased EndoMT-related transcription factors, downregulation of EC markers and upregulation of mesenchymal markers.
+
+```{r, fig.height=4, fig.width=10}
+# Endothelial markers
+VlnPlot(integrated_reduced, features= c("CLDN5","VWF","ABCB1") ,assay = "RNA", group.by = "AgeGroup")
+
+# Mesenchymal markers 
+VlnPlot(integrated_reduced, features= c("AIFM2","FN1","CDH2") ,assay = "RNA", group.by = "AgeGroup")
+```
+
+## Angiogenesis 
+
+```{r, fig.width=15, fig.height=20}
+# Grouping cells into age groups 
+mod_metadata <- integrated_reduced@meta.data  %>% mutate(AgeClass = case_when(Age <= 44 ~ '30-44',
+                                                                              Age > 44 & Age < 65 ~ '45-65',
+                                                                              Age > 70 & Age < 80 ~ "70-80",
+                                                                              Age > 80 ~ "80-90"))
+                                    
+integrated_reduced[["AgeClass"]] <- mod_metadata$AgeClass
+table(integrated_reduced@meta.data$AgeClass)
+
+# Negative regulation of angiogenesis 
+neg_angio <- read.delim("/Users/serachoi/Desktop/neg_angiogenesis.txt")
+neg_angio_list <- as.character(neg_angio[2:nrow(neg_angio),1])
+
+# Plot DotPlot
+DotPlot(integrated_reduced, assay = "RNA", features = neg_angio_list, group.by = "AgeClass")
+
+# Positive regulation of angiogenesis 
+pos_angio <- read.delim("/Users/serachoi/Desktop/pos_angiogenesis.txt")
+pos_angio_list <- as.character(pos_angio[2:nrow(pos_angio),1])
+
+# Plot DotPlot
+DotPlot(integrated_reduced, assay = "RNA", features = pos_angio_list, group.by = "AgeClass")
+
+# Plot Heatmap
+integrated_avg <- AverageExpression(integrated_reduced, return.seurat = TRUE, group.by = "AgeClass")
+
+DoHeatmap(integrated_avg, assay = "RNA", slot = "data", features=neg_angio_list, label = TRUE, group.by = "ident")
+
+DoHeatmap(integrated_avg, assay = "RNA", slot = "data", features=pos_angio_list, label = TRUE, group.by = "ident")
+
+# Plot VLnPlot
+VlnPlot(integrated_reduced, assay = "RNA", features = pos_angio_list, group.by = "AgeGroup", pt.size = 0)
+
+```
+
+# ssGSEA
+
+ssGSEA 
+
+```{r, fig.width=10}
+GS.hallmark <- getGeneSets(library = "C5")
+pathways <- enrichIt(integrated_reduced, gene.sets = GS.hallmark, groups = 1000, cores = 2)
+integrated_reduced <- AddMetaData(integrated_reduced, pathways)
+
+VlnPlot(integrated_reduced, features= "GOBP_NEGATIVE_REGULATION_OF_SPROUTING_ANGIOGENESIS", group.by = "AgeGroup", pt.size = 0.001)
+VlnPlot(integrated_reduced, features= "GOBP_POSITIVE_REGULATION_OF_SPROUTING_ANGIOGENESIS", group.by = "AgeGroup", pt.size = 0.001)
+VlnPlot(integrated_reduced, features= "GOBP_POSITIVE_REGULATION_OF_EPITHELIAL_TO_MESENCHYMAL_TRANSITION", group.by = "AgeGroup", pt.size = 0.001)
+VlnPlot(integrated_reduced, features= "GOBP_CYTOKINE_PRODUCTION_INVOLVED_IN_INFLAMMATORY_RESPONSE", group.by = "AgeGroup",pt.size = 0.001)
+
+
+
+```
+
+
+## Gene Set Enrichment Analysis 
+
+```{r}
+# Prepare geneset
+hallmark <- msigdbr(species = "Homo sapiens", category = "H")
+geneset <- hallmark %>% split(x = .$gene_symbol, f = .$gs_name)
+# Prepare input data
+old.markers$gene <- rownames(old.markers)
+ranks <- old.markers %>% select(gene, avg_log2FC)
+ranks <- deframe(ranks)
+# Run fgsea
+old.gsea <- fgsea(pathways = geneset, stats = ranks, scoreType= "pos")
+# Tidy output
+old.gsea_tidy <- old.gsea %>% as_tibble() %>% arrange(desc(NES))
+old.gsea_tidy %>% select(-leadingEdge, -ES) %>% arrange(padj)
+# Create barplot 
+ggplot(old.gsea_tidy, aes(reorder(pathway, NES), NES)) + geom_col(aes(fill=padj<0.05)) + theme_minimal() + coord_flip()
+```
+
+## Enhanced in Young cells 
+
+Overall, 315 genes were identified to be enhanced in young cells. Of these, 100 are statistically significant (adjusted p-value < 0.05). If I apply harsher threshold values, 20 gene are enhanced in young cells. 
+
+```{r, fig.height=13, fig.width=15}
+Idents(integrated_reduced) <- "AgeGroup"
+
+young.markers <- FindMarkers(integrated_reduced,
+                           assay = "RNA",
+                           ident.1 = "Young",
+                           ident.2 = "Old",
+                           only.pos = TRUE, 
+                           min.pct = 0.25, 
+                           logfc.threshold = 0.25,
+                           test.use = "MAST")
+
+young.markers
+young.markers <- subset(young.markers, old.markers$p_val_adj < 0.05 )
+young.markers_sig <- subset(young.markers, subset =(young.markers$p_val_adj < 0.05 & young.markers$pct.1 > 0.25 & young.markers$pct.2 < 0.25))
+
+young.markers_sig
+VlnPlot(integrated_reduced, assay = "RNA", features = rownames(young.markers_sig)[1:12], group.by = "AgeGroup", pt.size = 0)
+```
+
+Enhanced genes in old (found in Luise)
+
+```{r, fig.height=13, fig.width=15}
+VlnPlot(integrated_reduced , assay = "RNA", features = c("SLC7A4","CDK17","ACER2", "FGD6", "TACC1", "PLAT", "TNRC6B"), group.by = "AgeGroup", pt.size = 0.01)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## Age analysis 
+
+30-65 Young
+70-90 Old
+
+```{r, fig.width=13, fig.height=10}
+# Classify cells into Young and Old 
+
+mod_metadata <- integrated@meta.data  %>% mutate(AgeGroup = case_when(Age < 65 ~ 'Young',
+                                                                      Age > 65 ~ 'Old'))
+                                    
+integrated[["AgeGroup"]] <- mod_metadata$AgeGroup
+
+Idents(integrated) <- "AgeGroup"
+table(Idents(integrated))
+
+# enhanced genes in Old individuals
+old.markers <- FindMarkers(integrated,
+                           ident.1 = "Old",
+                           ident.2 = "Young",
+                           only.pos = TRUE, 
+                           min.pct = 0.25, 
+                           logfc.threshold = 0.25,
+                           test.use = "MAST")
+
+old.markers
+old.markers_sig <- subset(old.markers, old.markers$p_val_adj < 0.05)
+
+VlnPlot(integrated,slot = "data", features = rownames(old.markers_sig)[1:10], group.by = "AgeGroup", pt.size = 0)
+
+saveRDS(integrated_reduced, "/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/integrated_ec.RDS")
+
+```
+
+
+
+
+
+
+

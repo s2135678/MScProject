@@ -1,0 +1,502 @@
+---
+title: "10_integrated_age_2"
+author: "Sera Choi"
+date: "08/07/2021"
+output: html_document
+---
+```{r, message=FALSE, warning=FALSE}
+# Load library
+library(Seurat)
+library(ggplot2)
+library(ggsci)
+library(gtools)
+library(dplyr)
+library(here)
+library("scales")
+library(dittoSeq)
+library(future)
+
+
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
+mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
+mypal4 <- pal_simpsons(palette = c("springfield"), alpha = 0.7)(16)
+mypal5 <- pal_rickandmorty(palette = c("schwifty"), alpha = 0.7)(6)
+mypal6 <- pal_futurama(palette = c("planetexpress"), alpha = 0.7)(5)
+mypal7 <- pal_startrek(palette = c("uniform"), alpha = 0.7)(5)
+mycoloursP<- c(mypal, mypal2, mypal3, mypal4, mypal5, mypal6, mypal7)
+show_col(mycoloursP, labels =F)
+
+# Set maximum size of the object 
+options(future.global.maxSize = 100000*1024^2)
+```
+
+
+# Age analysis 2
+
+This ec dataset contains ECs from Luise, Yang (downsampled) and Lau. More thorough analysis will be performed including QC. 
+
+```{r}
+ec <- readRDS("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/integrated_ec.RDS")
+```
+
+## Quality control
+
+Even after individual quality control, I wanted to have a look at the quality of integrated data. All looks good! 
+
+```{r}
+ec[["percent.mt"]] <- PercentageFeatureSet(ec, pattern = "^MT-", assay = "RNA")
+VlnPlot(ec, features = "nFeature_RNA", group.by = "orig.ident", pt.size=0, cols = mycoloursP[1:25])
+VlnPlot(ec, features = "nCount_RNA", group.by = "orig.ident", pt.size=0, cols = mycoloursP[1:25])
+VlnPlot(ec, features = "percent.mt", group.by = "orig.ident", pt.size=0,cols = mycoloursP[1:25])
+
+FeatureScatter(ec, feature1 = "nCount_RNA", feature2 = "percent.mt", group.by = "orig.ident",cols = mycoloursP[1:25])
+FeatureScatter(ec, feature1 = "nCount_RNA", feature2 = "nFeature_RNA", group.by = "orig.ident",cols = mycoloursP[1:25])
+```
+
+## Visualisation
+
+UMAP by individuals, dataset, Tissue, AgeGroup, nFeature_RNA, nCount_RNA, percent.mt. Since I am happy that these cells are all capillary ECs, no need for clustering. I will go straight into differential gene expression analysis. Previously, I have used arterial, venous and capillary gene markers, but no clear distinctions were made. 
+
+```{r}
+# Individuals 
+DimPlot(ec, reduction = "umap", group.by = "BBN",cols = mycoloursP[1:25])
+# Dataset
+DimPlot(ec, reduction = "umap", group.by = "orig.ident")
+# Agegroup
+DimPlot(ec, reduction = "umap", group.by = "AgeGroup",cols = mycoloursP[1:25])
+# Tissue 
+mod_metadata <- ec@meta.data  %>% mutate(Tissue = case_when(orig.ident == "Luise" ~ 'BA4',
+                                                            orig.ident == "Lau" ~ "Prefrontal cortex",
+                                                            orig.ident == "Yang" ~ "Superial frontal cortex"))
+                                    
+ec[["Tissue"]] <- mod_metadata$Tissue
+DimPlot(ec, reduction = "umap", group.by = "Tissue",cols = mycoloursP[1:25])
+
+# number of unique genes 
+DefaultAssay(ec) <- "RNA"
+FeaturePlot(ec, features = "nFeature_RNA")
+FeaturePlot(ec, features = "nCount_RNA")
+FeaturePlot(ec, features = "percent.mt")
+FeaturePlot(ec, features = "percent.ribo")
+```
+
+# Clustering 
+
+Clustering at different resolutions just to see. At resolution 0.1, 3 clusters are seen. Possibly 1: high ribo genes and 2: Luise's diseased cells.
+
+```{r}
+DefaultAssay(ec) <- "integrated"
+#Generate DimPlot of all tested clustering resolutions in metadata
+# requires gtools library and Seurat
+plot_list_func <- function(seur_obj,
+                           col_pattern,
+                           clust_lab = TRUE,
+                           label_size = 8,
+                           num_col = 4){
+  # finds column with additional resolution clusterings
+  extr_res_col <- grep(pattern = col_pattern, names(seur_obj@meta.data))
+  # obtain column names
+  res_names <- names(seur_obj@meta.data[extr_res_col])
+  
+  # gtools function, sorts gene_names alphanumeric:
+  res_names <- mixedsort(res_names) 
+  plot_l <-list()
+  
+  for(i in 1: length(res_names)){
+  dim_plot <- DimPlot(seur_obj, 
+                      reduction = "umap", 
+                      group.by = res_names[i],
+                      label = clust_lab,
+                      label.size = label_size) + NoLegend()
+  print(dim_plot)
+ }
+}
+
+ec <- FindNeighbors(ec, dims = 1:20)
+ec <- FindClusters(ec, resolution = c(0.01, 0.05, seq(from = 0.1, to = 1, by = 0.1)))
+ec <- RunUMAP(ec, dims = 1:20)
+
+plot_list_func(seur_obj = ec, col_pattern = "integrated_snn_res.")
+```
+
+# Differential gene analysis with Age
+
+## Enhanced in Aged cells 
+
+Previously using only Luise's dataset, only 8 gene were identified to be enhanced in aged cells. However, with increased cell depth, many more cells are identified to be enhanced. Overall 208 DEGs were identified. Of these, 50 were statistically significant (<0.05). I reduced the list furtherby setting thresholds:
+
+* adjusted p-value < 0.05
+* pct.1 > 25%
+* pct.2 < 25%
+* logFC > 0.25
+
+Giving, overall 30 genes that are enhanced in aged ECs. 
+
+```{r, fig.height=13, fig.width=15}
+DefaultAssay(ec) <- "RNA"
+Idents(ec) <- "AgeGroup"
+
+old.markers <- FindMarkers(ec,
+                           assay = "RNA",
+                           ident.1 = "Old",
+                           ident.2 = "Young",
+                           only.pos = TRUE, 
+                           min.pct = 0.25, 
+                           logfc.threshold = 0.25,
+                           test.use = "MAST")
+old.markers
+
+old.markers_sig <- subset(old.markers, old.markers$p_val_adj < 0.05 )
+old.markers_stringent <- subset(old.markers, subset =(old.markers$p_val_adj < 0.05 & old.markers$pct.1 > 0.25 & old.markers$pct.2 < 0.25))
+
+# Output 
+old.markers_stringent
+VlnPlot(ec, assay = "RNA", features = rownames(old.markers_stringent)[1:12], group.by = "AgeGroup", pt.size = 0)
+```
+
+
+### Endothelial-mesenchymal transtition 
+
+EndMT transition is characterised by increased EndoMT-related transcription factors, downregulation of EC markers and upregulation of mesenchymal markers. However, this is not so clear because there are heterogenous population of endothelial and mesenchymal cells. 
+
+```{r, fig.height=4, fig.width=10}
+# Endothelial markers
+VlnPlot(integrated_reduced, features= c("CLDN5","VWF","ABCB1") ,assay = "RNA", group.by = "AgeGroup")
+
+# Mesenchymal markers 
+VlnPlot(integrated_reduced, features= c("AIFM2","FN1","CDH2") ,assay = "RNA", group.by = "AgeGroup")
+```
+
+#### Subset of cells that express MKL1
+
+Even after only using cells that express MKL1, the distinction is not clear, possibly due to imbalance of cells in old and young after subset. 
+
+```{r}
+# Subset ECs that have MKL1 expression level > 1
+DefaultAssay(ec) <- "RNA"
+mes <- subset(ec, subset = MKL1 > 1)
+
+table(mes@meta.data$AgeGroup)
+
+# Endothelial markers
+VlnPlot(mes, features= c("CLDN5","VWF","ABCB1") ,assay = "RNA", group.by = "AgeGroup")
+
+# Mesenchymal markers 
+VlnPlot(mes, features= c("AIFM2","FN1","CDH2") ,assay = "RNA", group.by = "AgeGroup")
+
+```
+
+## Enrichment Analysis 
+
+source: https://hbctraining.github.io/DGE_workshop/lessons/09_functional_analysis.html
+
+The principle of GSEA is to search for sets of genes that are significantly over-represented in a given list of genes (mine), compared to a background set of genes (taken from dataset). Typically, these gene sets are compiled from gene and pathway annotation databases such as GO and KEGG. GO is used for ontology and KEGG is used for pathways. 
+
+GSEA is performed on 50 genes that are significant. 
+
+### Enrichment analysis with Gene ontology analysis using clusterProfiler
+
+Here, I will be using clusterProfiler to perform over-representation analysis on GO terms associated with our list of significant genes. The tool takes in two inputs: list of DEGs and background gene list to perform hypergeometric testing. The parameter 'ont' can be BP (biological process), CC (cellular component), MP (molecular function) or ALL. First, the DEGs are converted into ENSEMBL ID using human reference genome (Human Build 38 by Genome Reference Consortium).
+
+At first, I ran enrichment test using significant genes (DEGs with adjusted p_val < 0.05) and background genes (all the other DEGs). However, this test is quite stringet, and gave no genes. When using background genes as those in the database, returns some signficiant GO terms.  
+
+```{r}
+library(org.Hs.eg.db)
+library(DOSE)
+library(pathview)
+library(clusterProfiler)
+library(AnnotationHub)
+library(ensembldb)
+library(tidyverse)
+library(annotables)
+library(enrichplot)
+
+# Return true/false where gene symbols in grch38 matches that in list of DEGs
+idx <- grch38$symbol %in% rownames(old.markers)
+# Subset for rows in grch38 that matches DEGs 
+ids <- grch38[idx,]
+
+# The gene names can map to more than one Ensembl ID (some genes change ID over time), 
+# so we need to remove duplicate IDs prior to assessing enriched GO terms
+non_duplicates <- which(duplicated(ids$symbol) == FALSE)
+ids <- ids[non_duplicates, ] 
+
+# Add gene column in DEG list 
+old.markers["gene"] <- rownames(old.markers)
+
+# Merge DEGs with subset of table from grch38
+res_ids <- inner_join(old.markers, ids, by=c("gene" ="symbol")) 
+
+# Create background dataset 
+all_genes <- as.character(res_ids$ensgene)
+
+# Create dataset containing significant genes 
+sig_genes <- subset(res_ids, p_val_adj < 0.05)
+sig_genes <- as.character(sig_genes$ensgene)
+
+# Perform GO enrichment analysis 
+ego <- enrichGO(gene = sig_genes, 
+                keyType = "ENSEMBL",
+                OrgDb = org.Hs.eg.db, 
+                ont = "BP", 
+                pAdjustMethod = "BH", 
+                minGSSize = 1,
+                pvalueCutoff = 0.2,
+                readable = TRUE)
+
+eGO_summary <- data.frame(ego)
+
+# Plot barplot 
+barplot(ego, showCategory=20)
+ggplot(eGO_summary, aes(Description, Count)) + geom_col(aes(fill=p.adjust<0.05)) + theme_minimal() + coord_flip()
+
+```
+
+## GSEA
+
+GSEA most often uses gene-level statistics or log2FC for all genes in DEGs, then look to see whether gene sets for particular biological pathways are enriched among the large positive or negative fold changes. Here, I will use log2FC from DEG analysis and use clusterProfiler to perform GSEA.
+
+### GSEA with GO terms 
+
+I tried using all DEGs (205), but using significant ones (p_adjusted < 0.05) gives more precise and relevant pathways. Lots of pathways highlighted towards deficiency in oxygen levels. 
+
+```{r, fig.width=13}
+# Create dataset containing significant genes 
+sig_ids <- subset(res_ids, p_val_adj < 0.05)
+# remove NAs
+res_entrez <- subset(sig_ids, entrez != "NA")
+# Remove duplicates 
+res_entrez <- res_entrez[which(duplicated(res_entrez$entrez) == F), ]
+# Extract name and fold-changes
+foldchanges <- res_entrez$avg_log2FC
+# Name each fold change with the corresponding Entrez ID
+names(foldchanges) <- res_entrez$entrez
+# Order in decreasing order
+foldchanges <- sort(foldchanges, decreasing = TRUE)
+gseaGO<- gseGO(geneList = foldchanges, 
+              OrgDb = org.Hs.eg.db, 
+              ont = 'BP', 
+              pAdjustMethod = "BH",
+              minGSSize = 1, 
+              pvalueCutoff = 1,
+              verbose = FALSE) 
+
+gseaGO_results <- as.data.frame(gseaGO@result[1:20,])
+
+# Plot barplot 
+ggplot(gseaGO_results, aes(Description, NES)) + geom_col(aes(fill=p.adjust<0.05)) + theme_minimal() + coord_flip()
+
+```
+
+### GSEA with KEGG pathways
+
+The foldchanges vector contains list of significant DEGs and their logFC values. Many pathways highlighted that are associated with disease. However since minGSSize = 1, very lineant thresholds. 
+
+```{r}
+
+# Perform GSEA using KEGG gene sets 
+gseaKEGG<- gseKEGG(geneList = foldchanges, 
+              organism = "hsa", 
+              minGSSize = 1, 
+              pvalueCutoff = 1,
+              scoreType = "pos")
+
+# Extract results 
+gseaKEGG_results <- gseaKEGG@result
+
+#Barplot
+ggplot(gseaKEGG_results[1:20,], aes(Description, NES)) + geom_col(aes(fill=p.adjust<0.05)) + theme_minimal() + coord_flip()
+```
+
+
+## GSEA with MSigDB hallmarks and ontology terms 
+
+* H = hallmark gene sets 
+* c5 = gene sets derived from the GO biological process ontology
+
+```{r}
+# Load GMT file downloaded from MSigDB website 
+h <- read.gmt("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/MSigDB_H")
+
+# Hallmarks
+msig_h <- GSEA(foldchanges, 
+               TERM2GENE=h,
+               scoreType = "pos",
+               minGSSize = 1,
+               pvalueCutoff = 1,
+               pAdjustMethod = "BH"
+               )
+
+msig_H_result <- data.frame(msig_h)
+msig_H_result <- msig_H_result[-c(16),] # remove p53 pathway
+msig_H_tidy <- subset(msig_H_result, subset = msig_H_result$pvalue<0.5)
+
+
+#Barplot
+ggplot(msig_H_result, aes(reorder(Description, NES), NES)) + geom_col(aes(fill=p.adjust< 0.1)) + theme_minimal() + coord_flip() + theme(axis.title = element_text(size = 12))
+```
+
+```{r, fig.width=10, fig.height=5}
+# Gene ontology
+c5 <- read.gmt("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/MSigDB_C5")
+
+msig_c5 <- GSEA(foldchanges, 
+               TERM2GENE=c5,
+               scoreType = "pos",
+               minGSSize = 1,
+               pvalueCutoff = 1,
+               pAdjustMethod = "BH"
+               )
+
+msig_C5_result <- data.frame(msig_c5)
+msig_C5_tidy <- subset(msig_C5_result, subset = msig_C5_result$p.adjust<0.4)
+
+#Barplot
+ggplot(msig_C5_tidy[1:20,], aes(Description, NES)) + geom_col(aes(fill=p.adjust <0.2)) + theme_minimal() + coord_flip()
+
+```
+
+# Enhanced genes in Young 
+
+With MAST, 315 enhanced genes found in young cells. Of these, 62 are significant under adjusted p-val < 0.05. After applying more stringent thresholds same as aged cells, 22 are significant. 
+
+Without any thresholds, many genes are mito related, perhaps cells are stressed.
+After adjusted p-val <0.05 is applied, mito genes still remain.
+It's only after the stringent thresholds are applied, most of mito genes disappear. But now, ribosomal genes appear. 
+
+
+#### RPS and RPL genes 
+
+* Ribosomal protein small and large genes 
+* Normally ribosomal genes expression increases with age 
+
+
+```{r, fig.height=13, fig.width=15}
+Idents(ec) <- "AgeGroup"
+
+young.markers <- FindMarkers(ec,
+                           assay = "RNA",
+                           ident.1 = "Young",
+                           ident.2 = "Old",
+                           only.pos = TRUE, 
+                           min.pct = 0.25, 
+                           logfc.threshold = 0.25,
+                           test.use = "MAST")
+young.markers
+
+young.markers_sig <- subset(young.markers, young.markers$p_val_adj < 0.05 )
+young.markers_sig
+
+young.markers_stringent <- subset(young.markers, subset =(young.markers$p_val_adj < 0.05 & young.markers$pct.1 > 0.25 & young.markers$pct.2 < 0.25))
+young.markers_stringent[1:10,]
+all.markers_young
+
+VlnPlot(ec, assay = "RNA", features = rownames(young.markers_stringent)[1:12], group.by = "AgeGroup", pt.size = 0)
+```
+
+### Checking Ribo genes 
+
+It is quite strange to have so many ribo genes reported as enhanced in young. It could be that the cells are too similar and the statistics picks up only the most abundant genes just because they are most easy to detect. Therefore, here I checked whether the % of total RPL/RPS genes is different compared to non-RPS/RPL genes. Perhaps there aren't many genes that are enahcned in young when compared to old. Since almost all (Expet 1) indiciduals in young group are from Luise's data and luise's dataset contains high percentage of ribosomal genes, perhaps it is finding genes that are different between datasets (Luise vs Lau+Yang). So, apart from first two, the rest are disregarded.  
+
+```{r}
+rpl <- PercentageFeatureSet(ec, pattern = "^RPL", assay = "RNA")
+rps <- PercentageFeatureSet(ec, pattern = "^RPS", assay = "RNA")
+ec[["percent.ribo"]] <- rpl+rps
+
+VlnPlot(ec, features = "percent.ribo", group.by = "orig.ident")
+VlnPlot(ec, features = "percent.ribo", group.by = "AgeGroup")
+
+# How many RPS/RPL genes 
+library(stringr)
+DefaultAssay(ec) <- "RNA"
+rpl_genes <- str_detect(rownames(ec), pattern = "^RPL")
+rps_genes <- str_detect(rownames(ec), pattern = "^RPS")
+ribo_percent <- (sum(rpl_genes) + sum(rps_genes))*100/length(rownames(ec))
+ribo_percent
+```
+
+
+# Visualisations for figures 
+
+## DotPlot of enhanced genes in Aged and Young
+
+This plot shows top 10 enhanced genes in young and old.
+
+```{r, fig.height=10, fig.width=5}
+
+markers <- c(rownames(old.markers_stringent)[1:10],rownames(all.markers_young) )
+#pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/Age_dotplot.pdf")
+dittoDotPlot(object = ec, 
+             vars = markers, 
+             group.by = "AgeGroup", 
+             scale = F,
+             min.color = "navyblue",
+             max.color = "orangered",
+             size = 10,
+             assay = "RNA") + theme_light() + coord_flip() + theme(axis.text = element_text(size=13), legend.text = element_text(size = 12))
+#dev.off()
+```
+
+## Bar Plot showing log2FC 
+
+Can have ribosomal genes removed or retained. 
+
+```{r, fig.width=20, fig.height=6}
+DefaultAssay(ec) <- "RNA"
+Idents(ec) <- "AgeGroup"
+
+all.markers <- FindMarkers(ec,
+                           assay = "RNA",
+                           ident.1 = "Old",
+                           ident.2 = "Young",
+                           only.pos = FALSE, 
+                           min.pct = 0.25, 
+                           logfc.threshold = 0.25,
+                           test.use = "MAST")
+
+# Obtain top 10 enhanced genes in young cells
+all.markers_young <- subset(all.markers, subset= all.markers$avg_log2FC<0)
+idx <- which(grepl("^RPL",rownames(all.markers_young)))
+test <- all.markers_young[-c(idx),] 
+idx <- which(grepl("^RPS",rownames(test)))
+test <- test[-c(idx),] 
+all.markers_young <- test
+all.markers_young <- subset(all.markers_young, subset = (all.markers_young$p_val_adj < 0.05 & all.markers_young$pct.1<0.25& all.markers_young$pct.2>0.25))
+
+# Combine enhanced genes in old and young 
+all.markers <- rbind(old.markers_stringent[1:10,], all.markers_young[1:10,])
+all.markers$gene <- rownames(all.markers)
+all.markers[order(all.markers$avg_log2FC, decreasing = TRUE),]
+all.markers$log10_FDR <- -log10(all.markers$p_val_adj)
+
+#pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/Age_barplot.pdf", width = 10, height = 7)
+
+# Barplot
+ggplot(data = all.markers, aes(x = reorder(gene, -avg_log2FC), y = avg_log2FC, fill = log10_FDR)) + geom_bar(stat="identity")  + theme_light()+ theme(axis.text = element_text(size=13), axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=0.4), legend.text = element_text(size = 12), legend.title = element_text(size = 13), text = element_text(size = 15)) + scale_fill_continuous(type="viridis")
+dev.off()
+all.markers
+all.markers_young
+idx
+```
+
+```{r}
+VlnPlot(ec, features = "MT-CYB", group.by = "orig.ident")
+```
+
+
+## Conclusion
+
+With age, damage to brain increases (hypoxia, senescent cells). I hypothesise that ageing has effects on regeneration. Correctly regulated mechanisms that facilitate wound closure occurs in healthy young brains. But for aged ECs, dysregulation of regenerative mechanisms accummulate and lead to subsequent diseases. My interest lies in angiogenesis and endothelial-mesychemal transition and inflammation.
+
+I think, some sort of damage occurs in the brain which requires regneration. This damage and build up of senescent cells gives rise to chronic inflammation where by pro-inflammatory cytokines are released. This inflammation has direct and indirect effects towards ECs. 
+
+* Direct: ECs are constantly activated with interleukin, causing dysfunctional EC and pathological angiogenesis (https://doi.org/10.3389/fimmu.2018.00294)
+* Indirect: increased inflmmation induces EndMT, which promotes BEC dysfunction (https://doi.org/10.3389/fimmu.2018.00294, Inflammation-induced endothelial to mesenchymal transition promotes brain endothelial cell dysfunction and occurs during multiple sclerosis pathophysiology)
+
+As well as inflammation, hypoxia has also shown to induce EndMT ()
+
+
+
+
+
