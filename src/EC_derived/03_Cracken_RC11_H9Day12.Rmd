@@ -1,0 +1,222 @@
+---
+title: "03_Cracken_RC11_H9Day12"
+author: "Sera Choi"
+date: "14/07/2021"
+output: html_document
+---
+
+```{r, message=FALSE, warning=FALSE}
+# Load library
+library(Seurat)
+library(ggplot2)
+library(dplyr)
+library(here)
+library("scales")
+library(ggsci)
+library(gtools)
+library(future)
+
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
+mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
+mypal4 <- pal_simpsons(palette = c("springfield"), alpha = 0.7)(16)
+mypal5 <- pal_rickandmorty(palette = c("schwifty"), alpha = 0.7)(6)
+mypal6 <- pal_futurama(palette = c("planetexpress"), alpha = 0.7)(5)
+mypal7 <- pal_startrek(palette = c("uniform"), alpha = 0.7)(5)
+mycoloursP<- c(mypal, mypal2, mypal3, mypal4, mypal5, mypal6, mypal7)
+show_col(mycoloursP, labels =F)
+
+# Set maximum size of the object 
+options(future.globals.maxSize = 50000*1024^2)
+```
+
+# McCraken et al (GSE131736)
+
+After analysing just H9 cell line Day 8, I've decided to expand the dataset to include RC11 day8 and H9 day 12. This section downloads the data from GEO, processes to subset ECs. The subset ECs will be converted to RDS format and saved in data/processed. 
+
+## H9 Day 12
+
+```{r}
+counts <- Read10X_h5("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/Craken_H9_day12.h5", use.names = TRUE, unique.features = TRUE)
+seur <- CreateSeuratObject(counts = counts, assay = "RNA", min.cells = 3, min.features = 200)
+```
+
+## Quality control
+
+Using thresholds Craken et al used, cells with 
+
+* cells expressing < 250 genes 
+* cells having UMI count > 10,000
+* cells with > 15% mito genes 
+
+were removed. 
+
+```{r}
+seur[["percent.mt"]] <- PercentageFeatureSet(seur, pattern = "^MT-")
+seur[["orig.ident"]] <- "McCracken_H9_Day12"
+VlnPlot(seur, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size =0)
+
+# Apply QC threshold
+seur <- subset(seur, subset = nCount_RNA > 250 & nFeature_RNA < 10000 & percent.mt < 15)
+
+#Visualise
+VlnPlot(seur, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size =0)
+plot1 <- FeatureScatter(seur, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot2 <- FeatureScatter(seur, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+plot1 + plot2
+```
+
+# Normalisation, scaling, reduction and visualisation
+
+All done following McCracken et al's methods.
+
+```{r}
+# Normalisation
+seur <- NormalizeData(seur, normalization.method = "LogNormalize", scale.factor = 10000)
+
+# Feature Selection
+seur <- FindVariableFeatures(seur, selection.method = "vst", nfeatures = 2000)
+
+# Scaling 
+all.genes <- rownames(seur)
+seur <- ScaleData(seur, features = all.genes)
+
+# Linear dimensional reduction
+seur <- RunPCA(seur, features = VariableFeatures(object = seur), verbose = FALSE)
+ElbowPlot(seur, ndims=50)
+
+# Visualisation
+seur <- RunUMAP(seur, dims = 1:20, verbose = FALSE)
+DimPlot(seur, reduction = "umap")
+
+# CLustering 
+seur <- FindNeighbors(seur, dims = 1:20, verbose = FALSE)
+seur <- FindClusters(seur, resolution = 0.01, verbose = FALSE)
+DimPlot(seur, reduction = "umap")
+
+saveRDS(seur, "/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/McCracken_H9_day12.RDS")
+```
+
+## Cell-type characterisation
+
+Using gene markers Craken et al used:
+
+* pluripotent (POUF51, SOX2, NANOG)
+* mesodermal (HAND1, T, MIXL1)
+* mesenchymal (ACTA2, ALCAM, PDGFRB)
+* endothelial (PECAM1, KDR, CD34, CDH5)
+* epithelial (EPCAM, CLDN4, RAB25, WNT6)
+* nephrogenic (PAX2, PAX8, CRYM)
+
+
+```{r, fig.width=10}
+# endothelial 
+FeaturePlot(seur, features = c('PECAM1', 'KDR', 'CD34', 'CDH5'))
+# Mesenchymal
+FeaturePlot(seur, features = c('ACTA2', 'ALCAM', 'PDGFRB'))
+```
+
+## Subeset ECs
+
+5,190 ECs
+
+```{r}
+Idents(seur) <- "RNA_snn_res.0.01"
+es <- subset(seur, idents = 0)
+saveRDS(es, "/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/McCracken_H9Day12_ec.RDS")
+```
+
+# RC11 Cell line 
+
+```{r}
+counts <- Read10X_h5("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/Cracken_RC11.h5", use.names = TRUE, unique.features = TRUE)
+seur <- CreateSeuratObject(counts = counts, assay = "RNA", min.cells = 3, min.features = 200)
+```
+
+## Quality control
+
+Using thresholds Craken et al used, cells with 
+
+* cells expressing < 250 genes 
+* cells having UMI count > 10,000
+* cells with > 15% mito genes 
+
+were removed. 
+
+```{r}
+seur[["percent.mt"]] <- PercentageFeatureSet(seur, pattern = "^MT-")
+seur[["orig.ident"]] <- "McCracken_RC11"
+VlnPlot(seur, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size =0)
+
+# Apply QC threshold
+seur <- subset(seur, subset = nCount_RNA > 250 & nFeature_RNA < 10000 & percent.mt < 15)
+
+#Visualise
+VlnPlot(seur, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size =0)
+plot1 <- FeatureScatter(seur, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot2 <- FeatureScatter(seur, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+plot1 + plot2
+```
+
+# Normalisation, scaling, reduction and visualisation
+
+All done following McCracken et al's methods.
+
+```{r}
+# Normalisation
+seur <- NormalizeData(seur, normalization.method = "LogNormalize", scale.factor = 10000)
+
+# Feature Selection
+seur <- FindVariableFeatures(seur, selection.method = "vst", nfeatures = 2000)
+
+# Scaling 
+all.genes <- rownames(seur)
+seur <- ScaleData(seur, features = all.genes)
+
+# Linear dimensional reduction
+seur <- RunPCA(seur, features = VariableFeatures(object = seur), verbose = FALSE)
+ElbowPlot(seur, ndims=50)
+
+# Visualisation
+seur <- RunUMAP(seur, dims = 1:20, verbose = FALSE)
+DimPlot(seur, reduction = "umap")
+
+# CLustering 
+seur <- FindNeighbors(seur, dims = 1:20, verbose = FALSE)
+seur <- FindClusters(seur, resolution = 0.01, verbose = FALSE)
+DimPlot(seur, reduction = "umap")
+
+saveRDS(seur, "/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/McCracken_RC11.RDS")
+```
+
+## Cell-type characterisation
+
+Using gene markers Craken et al used:
+
+* pluripotent (POUF51, SOX2, NANOG)
+* mesodermal (HAND1, T, MIXL1)
+* mesenchymal (ACTA2, ALCAM, PDGFRB)
+* endothelial (PECAM1, KDR, CD34, CDH5)
+* epithelial (EPCAM, CLDN4, RAB25, WNT6)
+* nephrogenic (PAX2, PAX8, CRYM)
+
+
+```{r, fig.width=10}
+# endothelial 
+FeaturePlot(seur, features = c('PECAM1', 'KDR', 'CD34', 'CDH5'))
+# Mesenchymal
+FeaturePlot(seur, features = c('ACTA2', 'ALCAM', 'PDGFRB'))
+```
+
+## Subeset ECs
+
+2,307 ECs
+
+```{r}
+Idents(seur) <- "RNA_snn_res.0.01"
+es <- subset(seur, idents = 1)
+saveRDS(es, "/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/McCracken_RC11_ec.RDS")
+```
+
+
+

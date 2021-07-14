@@ -123,6 +123,12 @@ DefaultAssay(ec.integrated) <- "RNA"
 ec.integrated <- NormalizeData(ec.integrated, verbose = FALSE)
 ```
 
+## Load data
+
+```{r}
+ec.integrated <- readRDS("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/SCT_ec")
+```
+
 ## Quality control
 
 ```{r}
@@ -134,6 +140,22 @@ VlnPlot(ec.integrated, features = "percent.mt", group.by = "orig.ident", pt.size
 FeatureScatter(ec.integrated, feature1 = "nCount_RNA", feature2 = "percent.mt", group.by = "orig.ident",cols = mycoloursP[1:25])
 FeatureScatter(ec.integrated, feature1 = "nCount_RNA", feature2 = "nFeature_RNA", group.by = "orig.ident",cols = mycoloursP[1:25])
 ```
+
+## Downstream analysis with integrated data
+
+After integration, PCA was performed. No separation by age. Therefore, principal components cannot be used for DEGs.  
+
+```{r}
+# Normalise 
+ec.integrated <- NormalizeData(ec.integrated, verbose = FALSE, assay = "RNA")
+
+# PCA
+ec.integrated <- RunPCA(ec.integrated, verbose = FALSE)
+DimPlot(ec.integrated, reduction = "pca", group.by = "orig.ident")
+print(ec.integrated[["pca"]], dims = 1, nfeatures = 20)
+DimHeatmap(ec.integrated, dims = 1, cells = 500, balanced = TRUE, assays = "integrated")
+```
+
 
 ## Clustering and visualisation 
 

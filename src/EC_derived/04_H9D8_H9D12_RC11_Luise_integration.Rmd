@@ -1,0 +1,122 @@
+---
+title: "04_H9D8_H9D12_RC11_Luise"
+author: "Sera Choi"
+date: "14/07/2021"
+output: html_document
+---
+```{r, message=FALSE, warning=FALSE}
+# Load library
+library(Seurat)
+library(ggplot2)
+library(dplyr)
+library(here)
+library("scales")
+library(ggsci)
+library(gtools)
+library(future)
+
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
+mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
+mypal4 <- pal_simpsons(palette = c("springfield"), alpha = 0.7)(16)
+mypal5 <- pal_rickandmorty(palette = c("schwifty"), alpha = 0.7)(6)
+mypal6 <- pal_futurama(palette = c("planetexpress"), alpha = 0.7)(5)
+mypal7 <- pal_startrek(palette = c("uniform"), alpha = 0.7)(5)
+mycoloursP<- c(mypal, mypal2, mypal3, mypal4, mypal5, mypal6, mypal7)
+show_col(mycoloursP, labels =F)
+
+# Set maximum size of the object 
+options(future.globals.maxSize = 50000*1024^2)
+```
+
+# Integration of McCracken RC11, H9 Day 8, H9 Day 12 and Luise
+
+Previously, ECs were subset from McCracken's dataset. Here, All ECs from McCracken's dataset and Luise's Young adult brain ECs will be integrated. 
+
+```{r}
+# Load data
+luise <- readRDS("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/Luise_ec.RDS")
+luise[["orig.ident"]] <- "Luise_young"
+
+h9_d8 <- readRDS("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/McCracken_H9Day8_ec.RDS")
+h9_d8[["orig.ident"]] <- "McCracken_H9_Day8"
+
+h9_d12 <- readRDS("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/McCracken_H9Day12_ec.RDS")
+h9_d12[["orig.ident"]] <- "McCracken_H9_Day12"
+
+rc11 <- readRDS("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/McCracken_RC11_ec.RDS")
+rc11[["orig.ident"]] <- "McCracken_RC11_Day8"
+
+# Classify age group
+mod_metadata <- luise@meta.data  %>% mutate(AgeGroup = case_when(Age < 65 ~ 'Young',
+                                                                 Age > 65 ~ 'Old'))
+                                    
+luise[["AgeGroup"]] <- mod_metadata$AgeGroup
+
+# Subset Young Adult brain cells 
+Idents(luise) <- "AgeGroup"
+luise <- subset(luise, idents = "Young")
+```
+
+
+## Downsampling McCracken datasets
+
+```{r}
+h9_d8 <- subset(h9_d8, downsample = 500)
+h9_d12 <- subset(h9_d12, downsample = 500)
+rc11 <- subset(rc11, downsample = 500)
+```
+
+# SCR normalisation and integration 
+
+```{r}
+comb <- merge(x = luise, y =c(h9_d8, h9_d12, rc11), add.cell.ids = c("Luise","H9_Day8","H9_Day12","RC11_Day8"))
+
+# Set up Seurat object list, run SCTransform oneach object separately
+ec.list <- SplitObject(comb, split.by = "orig.ident")
+for (i in 1:length(ec.list)) {
+    ec.list[[i]] <- SCTransform(ec.list[[i]], verbose = F)
+}
+
+# Select features for downstream integration
+ec.features <- SelectIntegrationFeatures(object.list = ec.list, nfeatures = 2000)
+# Ensures that all necessary Pearson residuals have been calculated 
+ec.list <- PrepSCTIntegration(object.list = ec.list, anchor.features = ec.features, verbose = F)
+
+# identify anchors and integrate datasets 
+ec.anchors <- FindIntegrationAnchors(object.list = ec.list, normalization.method = "SCT", anchor.features = ec.features, verbose = F)
+ec.integrated <- IntegrateData(anchorset = ec.anchors, normalization.method = "SCT", verbose = F)
+
+# Visualisation
+ec.integrated <- RunPCA(ec.integrated, verbose = FALSE)
+ElbowPlot(ec.integrated, ndims = 50)
+
+ec.integrated <- RunUMAP(ec.integrated, dims = 1:20)
+DimPlot(ec.integrated, reduction = "umap", group.by = "orig.ident", cols=mycoloursP[1:25])
+table(ec.integrated@meta.data$orig.ident)
+```
+
+## QC of integrated data
+
+```{r}
+VlnPlot(ec.integrated, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, group.by = "orig.ident", pt.size = 0)
+plot1 <- FeatureScatter(ec.integrated, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot2 <- FeatureScatter(ec.integrated, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+plot1 + plot2
+```
+
+## Downstream analysis 
+
+```{r}
+# Normalise 
+ec.integrated <- NormalizeData(ec.integrated, verbose = FALSE, assay = "RNA")
+
+# PCA analysis
+Idents(ec.integrated) <- "orig.ident"
+ec.integrated <- RunPCA(ec.integrated, verbose=FALSE)
+DimPlot(ec.integrated, reduction = "pca")
+ec.integrated <- RunUMAP(ec.integrated, dims = 1:20, verbose=FALSE)
+DimPlot(ec.integrated, reduction = "umap")
+
+saveRDS(ec.integrated, "/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/McCracken_Luise_integrated.RDS")
+```

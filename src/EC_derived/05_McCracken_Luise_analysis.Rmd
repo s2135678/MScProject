@@ -1,0 +1,79 @@
+---
+title: "05_McCracken_Luise_analysis"
+author: "Sera Choi"
+date: "14/07/2021"
+output: html_document
+---
+
+```{r, message=FALSE, warning=FALSE}
+# Load library
+library(Seurat)
+library(ggplot2)
+library(dplyr)
+library(here)
+library("scales")
+library(ggsci)
+library(gtools)
+library(future)
+library(dittoSeq)
+
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
+mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
+mypal4 <- pal_simpsons(palette = c("springfield"), alpha = 0.7)(16)
+mypal5 <- pal_rickandmorty(palette = c("schwifty"), alpha = 0.7)(6)
+mypal6 <- pal_futurama(palette = c("planetexpress"), alpha = 0.7)(5)
+mypal7 <- pal_startrek(palette = c("uniform"), alpha = 0.7)(5)
+mycoloursP<- c(mypal, mypal2, mypal3, mypal4, mypal5, mypal6, mypal7)
+show_col(mycoloursP, labels =F)
+
+# Set maximum size of the object 
+options(future.globals.maxSize = 50000*1024^2)
+```
+
+
+# Analysis of H9 Day8 + H9 Day12 + RC11 vs. Young Adult Brain ECs
+
+Using top 20 enhanced genes in Young Adult Brain ECs, here, I try to see if these are also depleted in H9 Day 12 and RC11.
+
+```{r, fig.width=12, fig.height=6}
+# Load data
+ec <- readRDS("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/McCracken_Luise_integrated.RDS")
+
+DefaultAssay(ec) <- "RNA"
+Idents(ec) <- "orig.ident"
+
+ec.markers <- FindMarkers(ec,
+                           ident.1 = "Luise_young",
+                           ident.2 = "McCracken_H9_Day8",
+                           only.pos = TRUE, 
+                           min.pct = 0.25, 
+                           logfc.threshold = 0.25,
+                           test.use = "MAST")
+ec.markers
+
+ec.markers_sig <- subset(ec.markers, ec.markers$p_val_adj < 0.05 )
+
+ec.markers_stringent <- subset(ec.markers, ec.markers$p_val_adj < 0.05 & ec.markers$pct.1 > 0.25 & ec.markers$pct.2 < 0.25)
+
+# Dotplot
+dittoDotPlot(object = ec, 
+             vars = rownames(ec.markers_stringent)[1:20], 
+             group.by = "orig.ident", 
+             scale = F,
+             min.color = "navyblue",
+             max.color = "orangered",
+             size = 10,
+             assay = "RNA") + theme_light() +
+  theme(axis.text = element_text(size=13), legend.text = element_text(size = 12), axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=0.4)) 
+```
+
+
+
+
+
+
+
+
+
+

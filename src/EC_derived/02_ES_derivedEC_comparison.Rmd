@@ -1,0 +1,331 @@
+---
+title: "02_ES_derivedEC_comparison"
+author: "Sera Choi"
+date: "12/07/2021"
+output: html_document
+---
+```{r, message=FALSE, warning=FALSE}
+# Load library
+library(Seurat)
+library(ggplot2)
+library(dplyr)
+library(here)
+library("scales")
+library(ggsci)
+library(gtools)
+library(future)
+
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
+mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
+mypal4 <- pal_simpsons(palette = c("springfield"), alpha = 0.7)(16)
+mypal5 <- pal_rickandmorty(palette = c("schwifty"), alpha = 0.7)(6)
+mypal6 <- pal_futurama(palette = c("planetexpress"), alpha = 0.7)(5)
+mypal7 <- pal_startrek(palette = c("uniform"), alpha = 0.7)(5)
+mycoloursP<- c(mypal, mypal2, mypal3, mypal4, mypal5, mypal6, mypal7)
+show_col(mycoloursP, labels =F)
+
+# Set maximum size of the object 
+options(future.globals.maxSize = 50000*1024^2)
+```
+
+# ES-derived EC vs. Young Adult Brain EC
+
+This section finds similarities and differences between ES-derived ECs and Young Adult Brain ECs. PC1 represents differences within McCracken's dataset. 
+
+```{r}
+# load data
+ec <- readRDS("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/ES_EC_integrated.RDS")
+
+# Visualisation
+DimPlot(ec, reduction = "pca", group.by = "orig.ident")
+DimPlot(ec, reduction = "umap", group.by = "orig.ident")
+
+# PCA analysis 
+DimHeatmap(ec, dims = 1, cells = 500, balanced = TRUE, assays = "integrated")
+print(ec[["pca"]], dims = 3, nfeatures = 20)
+```
+
+
+# Differential gene expression analysis 
+
+## Enhanced in ES-derived ECs 
+
+Of 3,241 DEGs, all were significant (adjusted p_value < 0.05). After applying more stringent thresholds, 2994 remained. 
+
+```{r, fig.width= 10}
+DefaultAssay(ec) <- "RNA"
+Idents(ec) <- "orig.ident"
+
+es.markers <- FindMarkers(ec,
+                           ident.1 = "McCracken",
+                           ident.2 = "Luise",
+                           only.pos = TRUE, 
+                           min.pct = 0.25, 
+                           logfc.threshold = 0.25,
+                           test.use = "MAST")
+es.markers
+
+es.markers_sig <- subset(es.markers, es.markers$p_val_adj < 0.05 )
+
+es.markers_stringent <- subset(es.markers, es.markers$p_val_adj < 0.05 & es.markers$pct.1 > 0.25 & es.markers$pct.2 < 0.25)
+
+# Dotplot
+dittoDotPlot(object = ec, 
+             vars = rownames(es.markers_stringent)[1:20], 
+             group.by = "orig.ident", 
+             scale = F,
+             min.color = "navyblue",
+             max.color = "orangered",
+             size = 10,
+             assay = "RNA") + theme_light() +
+  theme(axis.text = element_text(size=13), legend.text = element_text(size = 12), axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=0.4))
+```
+
+### Ribosomal gene 
+
+```{r}
+# ribo genes 
+rpl <- PercentageFeatureSet(ec, pattern = "^RPL", assay = "RNA")
+rps <- PercentageFeatureSet(ec, pattern = "^RPS", assay = "RNA")
+ec[["percent.ribo"]] <- rpl+rps
+
+# Plot
+VlnPlot(ec, features = "percent.ribo", group.by = "orig.ident")
+```
+
+## GSEA with MSigDB Hallmarks 
+
+```{r, fig,width = 15, fig.height=6}
+## Format data
+# Return true/false where gene symbols in grch38 matches that in list of DEGs
+idx <- grch38$symbol %in% rownames(es.markers)
+# Subset for rows in grch38 that matches DEGs 
+ids <- grch38[idx,]
+
+# The gene names can map to more than one Ensembl ID (some genes change ID over time), 
+# so we need to remove duplicate IDs prior to assessing enriched GO terms
+non_duplicates <- which(duplicated(ids$symbol) == FALSE)
+ids <- ids[non_duplicates, ] 
+
+# Add gene column in DEG list 
+es.markers["gene"] <- rownames(es.markers)
+
+# Merge DEGs with subset of table from grch38
+res_ids <- inner_join(es.markers, ids, by=c("gene" ="symbol")) 
+
+# Create dataset containing significant genes 
+sig_ids <- subset(res_ids, p_val_adj < 0.05)
+
+# remove NAs
+res_entrez <- subset(sig_ids, entrez != "NA")
+
+# Remove duplicates 
+res_entrez <- res_entrez[which(duplicated(res_entrez$entrez) == F), ]
+
+# Extract name and fold-changes
+foldchanges <- res_entrez$avg_log2FC
+
+# Name each fold change with the corresponding Entrez ID
+names(foldchanges) <- res_entrez$entrez
+
+# Order in decreasing order
+foldchanges <- sort(foldchanges, decreasing = TRUE)
+
+## Load GMT file downloaded from MSigDB website 
+h <- read.gmt("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/MSigDB_H")
+
+# Hallmarks
+msig_h_es <- GSEA(foldchanges, 
+               TERM2GENE=h,
+               scoreType = "pos",
+               minGSSize = 10,
+               pvalueCutoff = 1,
+               pAdjustMethod = "BH")
+
+msig_H_result_es <- data.frame(msig_h_es)
+msig_H_tidy_es <- subset(msig_H_result_es, subset = msig_H_result_es$p.adjust<0.6)
+
+#Barplot
+ggplot(msig_H_tidy_es, aes(reorder(Description, NES), NES)) + geom_col(aes(fill=p.adjust< 0.2)) + theme_minimal() + coord_flip() + theme(axis.text = element_text(size = 11))
+```
+
+## GSEA with MSigDB Gene ontology
+
+```{r, fig.width=10, fig.height=5}
+## Load GMT file downloaded from MSigDB website 
+c5 <- read.gmt("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/MSigDB_C5")
+
+# Hallmarks
+msig_c5_es <- GSEA(foldchanges, 
+               TERM2GENE=c5,
+               scoreType = "pos",
+               minGSSize = 10,
+               pvalueCutoff = 1,
+               pAdjustMethod = "BH")
+
+msig_C5_result_es <- data.frame(msig_c5_es)
+
+msig_C5_tidy_es <- subset(msig_C5_result_es, subset = msig_C5_result_es$p.adjust<0.6)
+
+#Barplot
+ggplot(msig_C5_result_es[1:10,], aes(reorder(Description, NES), NES)) + geom_col(aes(fill=p.adjust< 0.2)) + theme_minimal() + coord_flip() + theme(axis.text = element_text(size = 11))
+```
+
+
+## Enhanced in mature ECs 
+
+Of 1362 DEGs, all were shown to be significant. After applying stringent thresholds, 371 genes were up-regulatd in mature ECs compared to ES-derived ECs. 
+
+```{r, fig.width=10, fig.height=6}
+DefaultAssay(ec) <- "RNA"
+Idents(ec) <- "orig.ident"
+
+ec.markers <- FindMarkers(ec,
+                           ident.1 = "Luise",
+                           ident.2 = "Craken_1",
+                           only.pos = TRUE, 
+                           min.pct = 0.25, 
+                           logfc.threshold = 0.25,
+                           test.use = "MAST")
+ec.markers
+
+ec.markers_sig <- subset(ec.markers, ec.markers$p_val_adj < 0.05 )
+
+ec.markers_stringent <- subset(ec.markers, ec.markers$p_val_adj < 0.05 & ec.markers$pct.1 > 0.25 & ec.markers$pct.2 < 0.25)
+
+# BarPlot
+ec.markers_stringent$gene <- rownames(ec.markers_stringent)
+ec.markers_stringent$log10_FDR <- -log10(ec.markers_stringent$p_val_adj)
+ggplot(data = ec.markers_stringent[1:20,], aes(x = reorder(gene, -avg_log2FC), y = avg_log2FC, fill = log10_FDR)) + geom_bar(stat="identity")  + theme_light()+ theme(axis.text = element_text(size=13), axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=0.4), legend.text = element_text(size = 12), legend.title = element_text(size = 13), text = element_text(size = 15)) + scale_fill_continuous(type="viridis")
+
+# Dotplot
+dittoDotPlot(object = ec, 
+             vars = rownames(ec.markers_stringent)[1:20], 
+             group.by = "orig.ident", 
+             scale = F,
+             min.color = "navyblue",
+             max.color = "orangered",
+             size = 10,
+             assay = "RNA") + theme_light() +
+  theme(axis.text = element_text(size=13), legend.text = element_text(size = 12), axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=0.4)) 
+```
+
+## GSEA with MSigDB Hallmarks 
+
+```{r}
+## Format data
+# Return true/false where gene symbols in grch38 matches that in list of DEGs
+idx <- grch38$symbol %in% rownames(ec.markers)
+# Subset for rows in grch38 that matches DEGs 
+ids <- grch38[idx,]
+
+# The gene names can map to more than one Ensembl ID (some genes change ID over time), 
+# so we need to remove duplicate IDs prior to assessing enriched GO terms
+non_duplicates <- which(duplicated(ids$symbol) == FALSE)
+ids <- ids[non_duplicates, ] 
+
+# Add gene column in DEG list 
+ec.markers["gene"] <- rownames(ec.markers)
+
+# Merge DEGs with subset of table from grch38
+res_ids <- inner_join(ec.markers, ids, by=c("gene" ="symbol")) 
+
+# Create dataset containing significant genes 
+sig_ids <- subset(res_ids, p_val_adj < 0.05)
+
+# remove NAs
+res_entrez <- subset(sig_ids, entrez != "NA")
+
+# Remove duplicates 
+res_entrez <- res_entrez[which(duplicated(res_entrez$entrez) == F), ]
+
+# Extract name and fold-changes
+foldchanges <- res_entrez$avg_log2FC
+
+# Name each fold change with the corresponding Entrez ID
+names(foldchanges) <- res_entrez$entrez
+
+# Order in decreasing order
+foldchanges <- sort(foldchanges, decreasing = TRUE)
+
+## Load GMT file downloaded from MSigDB website 
+h <- read.gmt("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/MSigDB_H")
+
+# Hallmarks
+msig_h_ec <- GSEA(foldchanges, 
+               TERM2GENE=h,
+               scoreType = "pos",
+               minGSSize = 10,
+               pvalueCutoff = 1,
+               pAdjustMethod = "BH")
+
+msig_H_result_ec <- data.frame(msig_h_ec)
+msig_H_tidy_ec <- subset(msig_H_result_ec, subset = msig_H_result_ec$p.adjust<0.5)
+
+#Barplot
+ggplot(msig_H_tidy_ec, aes(reorder(Description, NES), NES)) + geom_col(aes(fill=p.adjust< 0.2)) + theme_minimal() + coord_flip() + theme(axis.title = element_text(size = 12))
+```
+
+
+## GSEA with MSigDB Gene ontology
+
+```{r}
+## Load GMT file downloaded from MSigDB website 
+c5 <- read.gmt("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/MSigDB_C5")
+
+# Hallmarks
+msig_c5_ec <- GSEA(foldchanges, 
+               TERM2GENE=c5,
+               scoreType = "pos",
+               minGSSize = 10,
+               pvalueCutoff = 1,
+               pAdjustMethod = "BH")
+
+msig_C5_result_ec <- data.frame(msig_c5_ec)
+
+msig_C5_tidy_ec <- subset(msig_C5_result_ec, subset = msig_C5_result_ec$p.adjust<0.25)
+
+#Barplot
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/GO_ec.pdf")
+ggplot(msig_C5_tidy_ec, aes(reorder(Description, NES), NES)) + geom_col(aes(fill=p.adjust< 0.2)) + theme_minimal() + coord_flip() + theme(axis.title = element_text(size = 12))
+dev.off()
+```
+
+# Visualisation
+
+## Volcano plot 
+
+```{r}
+DefaultAssay(ec) <- "RNA"
+Idents(ec) <- "orig.ident"
+
+all.markers <- FindMarkers(ec,
+                           ident.1 = "Craken_1",
+                           ident.2 = "Luise",
+                           only.pos = FALSE, 
+                           min.pct = 0.25,
+                           logfc.threshold = 0,
+                           test.use = "MAST")
+
+# Format list of DEGs
+all.markers$diff <- "NO"
+all.markers$diff[all.markers$avg_log2FC > 2.5] <- "UP"
+all.markers$diff[all.markers$avg_log2FC < -2.5] <- "DOWN"
+
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/ES_volcano.pdf")
+# Volcano plot 
+ggplot(data = all.markers,aes(x=avg_log2FC, y=-log10(p_val_adj), col=diff)) + 
+  geom_point() +
+  theme_light() +
+  geom_hline(yintercept = -log10(0.01), col="red") + 
+  geom_vline(xintercept = c(-2.5,2.5), col="red") + 
+  scale_color_manual(values=c(mycoloursP[2],mycoloursP[25],mycoloursP[1]))
+dev.off()
+
+```
+
+
+
+
+
