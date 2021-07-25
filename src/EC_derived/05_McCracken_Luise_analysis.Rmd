@@ -57,6 +57,7 @@ ec.markers_sig <- subset(ec.markers, ec.markers$p_val_adj < 0.05 )
 ec.markers_stringent <- subset(ec.markers, ec.markers$p_val_adj < 0.05 & ec.markers$pct.1 > 0.25 & ec.markers$pct.2 < 0.25)
 
 # Dotplot
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/es-derived/dotplot2.pdf", width = 12, height = 6)
 dittoDotPlot(object = ec, 
              vars = rownames(ec.markers_stringent)[1:20], 
              group.by = "orig.ident", 
@@ -65,7 +66,8 @@ dittoDotPlot(object = ec,
              max.color = "orangered",
              size = 10,
              assay = "RNA") + theme_light() +
-  theme(axis.text = element_text(size=13), legend.text = element_text(size = 12), axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=0.4)) 
+  theme(axis.text = element_text(size=13), legend.text = element_text(size = 12), axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) 
+dev.off()
 ```
 
 

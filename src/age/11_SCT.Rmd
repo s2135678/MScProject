@@ -180,18 +180,24 @@ rps <- PercentageFeatureSet(ec.integrated, pattern = "^RPS", assay = "RNA")
 ec.integrated[["percent.ribo"]] <- rpl+rps
 
 # Individuals 
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/age/Fig7_b_dim.pdf", height = 5, width=8)
 DimPlot(ec.integrated, reduction = "umap", group.by = "BBN",cols = mycoloursP[1:25])
+dev.off()
 # Dataset
 DimPlot(ec.integrated, reduction = "umap", group.by = "orig.ident",cols = mycoloursP[1:25])
 # Agegroup
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/age/Fig7_b_age.pdf", height = 5, width=6)
 DimPlot(ec.integrated, reduction = "umap", group.by = "AgeGroup",cols = mycoloursP[1:25])
+dev.off()
 # Tissue 
 mod_metadata <- ec.integrated@meta.data  %>% mutate(Tissue = case_when(orig.ident == "Luise" ~ 'BA4',
                                                             orig.ident == "Lau" ~ "Prefrontal cortex",
                                                             orig.ident == "Yang" ~ "Superial frontal cortex"))
                                     
 ec.integrated[["Tissue"]] <- mod_metadata$Tissue
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/age/Fig7_b_tissue.pdf", height = 5, width=7)
 DimPlot(ec.integrated, reduction = "umap", group.by = "Tissue",cols = mycoloursP[1:25])
+dev.off()
 
 # number of unique genes 
 FeaturePlot(ec.integrated, features = "nFeature_RNA")

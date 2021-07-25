@@ -50,6 +50,14 @@ Rather than CCA, better, more advanced integration method SCTransform was used t
 ```{r}
 ec <- readRDS("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/SCT_ec")
 ec <- NormalizeData(ec, assay = "RNA")
+
+# Change Luise to Seeker
+mod_metadata <- ec@meta.data  %>% mutate(orig.ident = case_when(orig.ident == "Luise" ~ 'Seeker',
+                                                                orig.ident == "Yang" ~ 'Yang',
+                                                                orig.ident == "Lau" ~ 'Lau'))
+                                    
+ec[["orig.ident"]] <- mod_metadata$orig.ident
+
 ```
 
 ## Enhanced genes in Aged 
@@ -148,8 +156,18 @@ msig_H_result <- data.frame(msig_h)
 msig_H_result <- msig_H_result[-c(16),] # remove p53 pathway
 msig_H_tidy <- subset(msig_H_result, subset = msig_H_result$pvalue<0.5)
 
+# Remove GOBP and _ for prettier label for graph 
+pathway <- rownames(msig_H_result)
+pathway <- str_remove_all(pathway, "HALLMARK_")
+pathway <- str_replace_all(pathway, "_", " ")
+pathway <- tolower(pathway)
+msig_H_result$Description <- pathway
+
 #Barplot
-ggplot(msig_H_result, aes(reorder(Description, NES), NES)) + geom_col(aes(fill=p.adjust< 0.2)) + theme_minimal() + coord_flip() + theme(axis.title = element_text(size = 12))
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/age/Fig8_GO.pdf", height = 6, width = 8)
+ggplot(msig_H_result, aes(reorder(Description, NES), NES)) + geom_col(aes(fill=p.adjust< 0.2)) + theme_light() + coord_flip() + theme(axis.text = element_text(size = 15)) + scale_fill_manual(values = c(mycoloursP[4],mycoloursP[5])) + labs(x="", y="NES")
+dev.off()
+
 ```
 
 ## GSEA with MSigDB gene ontology
@@ -169,8 +187,18 @@ msig_c5 <- GSEA(foldchanges,
 msig_C5_result <- data.frame(msig_c5)
 msig_C5_tidy <- subset(msig_C5_result, subset = msig_C5_result$pvalue<0.05)
 
+# Remove GOBP and _ for prettier label for graph 
+pathway <- rownames(msig_C5_result)
+pathway[4] <- "adaptive immune response with immunoglobulin"
+pathway <- str_remove_all(pathway, "GOBP_")
+pathway <- str_replace_all(pathway, "_", " ")
+pathway <- tolower(pathway)
+msig_C5_result$Description <- pathway
+
 #Barplot
-ggplot(msig_C5_tidy, aes(str_wrap(Description,width=1), NES)) + geom_col(aes(fill=p.adjust <0.2)) + theme_minimal() + coord_flip()
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/age/Fig8_GO.pdf", height = 6, width = 10)
+ggplot(msig_C5_result[1:20,], aes(reorder(Description, NES), NES)) + geom_col(aes(fill=p.adjust <0.2)) + theme_minimal() + coord_flip() + theme(axis.text = element_text(size = 15)) + scale_fill_manual(values = c(mycoloursP[4],mycoloursP[5])) + labs(x="", y="NES")
+dev.off()
 ```
 
 # Enhanced genes in Young 
@@ -211,9 +239,11 @@ VlnPlot(ec, assay = "RNA", features = rownames(young.markers_stringent)[1:12], g
 It is quite strange to have so many ribo genes reported as enhanced in young. It could be that the cells are too similar and the statistics picks up only the most abundant genes just because they are most easy to detect. Therefore, here I checked whether the % of total RPL/RPS genes is different compared to non-RPS/RPL genes. Perhaps there aren't many genes that are enahcned in young when compared to old. Since almost all (Expet 1) indiciduals in young group are from Luise's data and luise's dataset contains high percentage of ribosomal genes, perhaps it is finding genes that are different between datasets (Luise vs Lau+Yang). So, apart from first two, the rest are disregarded.  
 
 ```{r}
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/age/ribo_percent1.pdf", width = 10, height = 5)
 VlnPlot(ec, features = "percent.ribo", group.by = "orig.ident", pt.size = 0.01, cols = mycoloursP[1:20])
-VlnPlot(ec, features = "percent.ribo", group.by = "AgeGroup", pt.size = 0.01, cols = mycoloursP[1:20])
-VlnPlot(ec, features = c("RPL37","RPS21"), group.by = "AgeGroup", assay="RNA")
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/age/ribo_percent2.pdf", width = 10, height = 5)
+VlnPlot(ec, features = "percent.ribo", group.by = "AgeGroup", pt.size = 0.01, cols = mycoloursP[4:20])
+dev.off()
 
 # How many RPS/RPL genes 
 library(stringr)
@@ -326,27 +356,25 @@ all.markers <- FindMarkers(ec,
 
 # Obtain top 10 enhanced genes in young cells
 all.markers_young <- subset(all.markers, subset= all.markers$avg_log2FC<0)
-all.markers_young <- subset(all.markers_young, subset = (all.markers_young$p_val_adj < 0.05 & all.markers_young$pct.1<0.25& all.markers_young$pct.2>0.25))
+all.markers_young <- subset(all.markers_young, subset = (all.markers_young$p_val_adj < 0.05 & all.markers_young$pct.1 < 0.25& all.markers_young$pct.2>0.25))
 all.markers_young <- all.markers_young[c(-1),] # Remove MKL2
 
 
-# Combine enhanced genes in old and young 
-all.markers <- rbind(old.markers_stringent[1:20,], all.markers_young[1:20,])
+# Combine top 20 genes in old and young 
+all.markers <- rbind(old.markers_stringent, all.markers_young)
 all.markers$gene <- rownames(all.markers)
-all.markers[order(all.markers$avg_log2FC, decreasing = TRUE),]
 all.markers$log10_FDR <- -log10(all.markers$p_val_adj)
 
-#pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/Age_barplot.pdf", width = 15, height = 5)
-
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/age/Age_barplot.pdf", width = 16, height = 5)
 # Barplot
-ggplot(data = all.markers, aes(x = reorder(gene, -avg_log2FC), y = avg_log2FC, fill = log10_FDR)) + geom_bar(stat="identity")  + theme_light()+ theme(axis.text = element_text(size=13), axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=0.4), legend.text = element_text(size = 12), legend.title = element_text(size = 13), text = element_text(size = 15)) + scale_fill_continuous(type="viridis")
-#dev.off()
+ggplot(data = all.markers, aes(x = reorder(gene, -avg_log2FC), y = avg_log2FC, fill = log10_FDR)) + geom_bar(stat="identity")  + theme_light()+ theme(axis.text = element_text(size=13), axis.text.x = element_text(angle = 45, vjust = 1, hjust=1), legend.text = element_text(size = 12), legend.title = element_text(size = 13), text = element_text(size = 15)) + scale_fill_continuous(type="viridis")
+dev.off()
 
 ```
 
 ### Bar plot removed ribo genes 
 
-```{r}
+```{r fig.width=13, fig.height=5}
 # Obtain top enhanced genes in young cells and remove ribo genes 
 all.markers_young <- subset(all.markers, subset= all.markers$avg_log2FC<0)
 # Remove ribo genes 
@@ -356,18 +384,18 @@ ribo_genes <- c(rpl_genes,rps_genes)
 all.markers_young <- all.markers_young[c(-ribo_genes),]
 all.markers_young <- all.markers_young[c(-1),] # Remove MKL2
 
-all.markers_young <- subset(all.markers_young, subset = (all.markers_young$p_val_adj < 0.05 & all.markers_young$pct.1<0.25& all.markers_young$pct.2>0.25))
+all.markers_young <- subset(all.markers_young, subset = (all.markers_young$p_val_adj < 0.05 & all.markers_young$pct.1 < 0.25& all.markers_young$pct.2>0.25))
 
 # Combine with old markers 
-all.markers <- rbind(old.markers_stringent[1:20,], all.markers_young)
+all.markers <- rbind(old.markers_stringent, all.markers_young)
 all.markers$gene <- rownames(all.markers)
 all.markers[order(all.markers$avg_log2FC, decreasing = TRUE),]
 all.markers$log10_FDR <- -log10(all.markers$p_val_adj)
 
-pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/Age_barplot_noRibo.pdf", width = 13, height = 5)
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/age/Age_barplot_no_ribo.pdf", width = 13, height = 5)
 
 # Barplot
-ggplot(data = all.markers, aes(x = reorder(gene, -avg_log2FC), y = avg_log2FC, fill = log10_FDR)) + geom_bar(stat="identity")  + theme_light()+ theme(axis.text = element_text(size=13), axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=0.4), legend.text = element_text(size = 12), legend.title = element_text(size = 13), text = element_text(size = 15)) + scale_fill_continuous(type="viridis")
+ggplot(data = all.markers, aes(x = reorder(gene, -avg_log2FC), y = avg_log2FC, fill = log10_FDR)) + geom_bar(stat="identity")  + theme_light()+ theme(axis.text = element_text(size=13), axis.text.x = element_text(angle = 45, vjust = 1, hjust=1), legend.text = element_text(size = 12), legend.title = element_text(size = 13), text = element_text(size = 15)) + scale_fill_continuous(type="viridis")
 dev.off()
 
 ```
@@ -380,15 +408,16 @@ This plot shows top 10 enhanced genes in young and old.
 ```{r, fig.height=5, fig.width=12}
 
 markers <- rownames(all.markers)
-pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/Age_dotplot.pdf", height = 5, width = 12)
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/age/Age_dotplot.pdf", height = 4, width = 12)
 dittoDotPlot(object = ec, 
              vars = markers, 
              group.by = "AgeGroup", 
              scale = F,
-             min.color = "navyblue",
+             min.color = "darkblue",
              max.color = "orangered",
              size = 10,
-             assay = "RNA") + theme_light() + theme(axis.text = element_text(size=13), legend.text = element_text(size = 12), axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=0.4)) 
+             min = 1,
+             assay = "RNA") + theme_light() + theme(axis.text = element_text(size=13), legend.text = element_text(size = 12), axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
 dev.off()
 ```
 

@@ -1,0 +1,218 @@
+---
+title: "Figure3_4_5"
+author: "Sera Choi"
+date: "16/07/2021"
+output: html_document
+---
+
+```{r, message=FALSE, warning=FALSE,echo = FALSE}
+# Load library
+library(Seurat)
+library(ggplot2)
+library(dplyr)
+library(here)
+library("scales")
+library(ggsci)
+library(gtools)
+library(patchwork)
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(DOSE)
+library(pathview)
+library(clusterProfiler)
+library(AnnotationHub)
+library(ensembldb)
+library(tidyverse)
+library(annotables)
+library(enrichplot)
+library(stringr)
+
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
+mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
+mypal4 <- pal_simpsons(palette = c("springfield"), alpha = 0.7)(16)
+mypal5 <- pal_rickandmorty(palette = c("schwifty"), alpha = 0.7)(6)
+mypal6 <- pal_futurama(palette = c("planetexpress"), alpha = 0.7)(5)
+mypal7 <- pal_startrek(palette = c("uniform"), alpha = 0.7)(5)
+mycoloursP<- c(mypal, mypal2, mypal3, mypal4, mypal5, mypal6, mypal7)
+show_col(mycoloursP, labels =F)
+
+# Load data 
+ec <- readRDS("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/Luise_ec.RDS")
+```
+
+# Visualising just ECs (2 clusters)
+
+```{r}
+Idents(ec) <- "RNA_snn_res.0.15"
+ids <- c("Endothelial_1", "Endothelial_2")
+names(ids) <- levels(ec)
+ec <- RenameIdents(ec, ids)
+
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/age/Fig3_ec.pdf", height = 5, width = 5)
+DimPlot(ec, reduction = 'umap', label = TRUE, label.size = 6, cols = mycoloursP[1:20]) +NoLegend()
+dev.off()
+
+```
+
+# DEG of cluster 2 (Stacked Violin Plot)
+
+```{r, fig.height=2.5, fig.width=11}
+markers <- FindMarkers(ec,
+                       ident.1 = "Endothelial_2",
+                       ident.2 = "Endothelial_1",
+                       only.pos = TRUE,
+                       min.pct = 0.25,
+                       logfc.threshold = 0.25,
+                       test.use = "MAST")
+
+markers_sig <- subset(markers, subset = markers$p_val_adj<0.05 & markers$pct.1 > 0.25 & markers$pct.2 < 0.25)
+markers_sig <- markers_sig[order(markers_sig$avg_log2FC, decreasing = TRUE),]
+features <- rownames(markers_sig)[1:10]
+
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/age/Fig3_DEG.pdf", height = 2.5, width = 11)
+VlnPlot(ec, features = features, stack = TRUE, sort = TRUE, flip = F, cols = mycoloursP[15:30], pt.size = 1) + theme(legend.position = "none", strip.text.x.top = element_text(angle = 0)) + geom_jitter(size = 0.1)
+dev.off()
+
+```
+
+
+# Filled bar plot showing proportion of cells by donors 
+
+
+```{r}
+# Proportion of cells from each samples in different clusters
+prop_samples <- prop.table(table(Idents(ec), ec$BBN), margin=1)
+prop_samples <- as.data.frame(prop_samples)
+colnames(prop_samples) <- c("Cluster", "Donors", "Proportion")
+
+# Plot a barplot 
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/age/Fig3_donors.pdf", height = 5, width = 5)
+ggplot(as.data.frame(prop_samples), aes(x=Cluster, y=Proportion, fill= Donors)) + geom_bar(stat="identity")+ theme_classic() + scale_fill_manual(values=mycoloursP[1:20])
+dev.off()
+```
+
+# Filled bar plot showing proportion of cells by cause of death
+
+```{r}
+# Proportion of cells from each samples in different clusters
+prop_CauseOfDeath_1 <- prop.table(table(Idents(ec), ec$CauseOfDeath_1a), margin=1)
+prop_CauseOfDeath_1 <- as.data.frame(prop_CauseOfDeath_1)
+colnames(prop_CauseOfDeath_1) <- c("Cluster", "Cause_of_Death", "Proportion")
+
+# Plot a barplot 
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/age/Fig3_death.pdf", height = 5, width = 7)
+ggplot(as.data.frame(prop_CauseOfDeath_1), aes(x=Cluster, y=Proportion, fill= Cause_of_Death)) + geom_bar(stat="identity")+ theme_classic() + scale_fill_manual(values=mycoloursP[1:20])
+dev.off()
+```
+
+#GSEA analysis 
+
+```{r, fig,width = 15, fig.height=6}
+## Format data
+# Return true/false where gene symbols in grch38 matches that in list of DEGs
+idx <- grch38$symbol %in% rownames(markers)
+# Subset for rows in grch38 that matches DEGs 
+ids <- grch38[idx,]
+
+# The gene names can map to more than one Ensembl ID (some genes change ID over time), 
+# so we need to remove duplicate IDs prior to assessing enriched GO terms
+non_duplicates <- which(duplicated(ids$symbol) == FALSE)
+ids <- ids[non_duplicates, ] 
+
+# Add gene column in DEG list 
+markers["gene"] <- rownames(markers)
+
+# Merge DEGs with subset of table from grch38
+res_ids <- inner_join(markers, ids, by=c("gene" ="symbol")) 
+
+# Create dataset containing significant genes 
+sig_ids <- subset(res_ids, p_val_adj < 0.05)
+
+# remove NAs
+res_entrez <- subset(sig_ids, entrez != "NA")
+
+# Remove duplicates 
+res_entrez <- res_entrez[which(duplicated(res_entrez$entrez) == F), ]
+
+# Extract name and fold-changes
+foldchanges <- res_entrez$avg_log2FC
+
+# Name each fold change with the corresponding Entrez ID
+names(foldchanges) <- res_entrez$entrez
+
+# Order in decreasing order
+foldchanges <- sort(foldchanges, decreasing = TRUE)
+
+## Load GMT file downloaded from MSigDB website 
+h <- read.gmt("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/MSigDB_H")
+
+# Hallmarks
+msig_h <- GSEA(foldchanges, 
+               TERM2GENE=h,
+               scoreType = "pos",
+               minGSSize = 1,
+               pvalueCutoff = 1,
+               pAdjustMethod = "BH")
+
+msig_H_result <- data.frame(msig_h)
+msig_H_tidy <- msig_H_result[1:20,]
+msig_H_tidy$Description <- c("Heme metabolism", "Inflammatory response","Epithelial-Mesenchymal transition","Apical junction","Allograft rejection",
+                             "Estrogen response early", "Cholesterol homeostasis", "Xenobiotic metabolism", "Hypoxia", "Complement",
+                             "Adipogenesis","UV response up","Angiogenesis","Apoptosis","G2M checkpoint", "Interferon gamma response",
+                             "Coagulation","Androgen response","ROS pathway", "Interferon alpha response")
+
+#Barplot
+ggplot(msig_H_tidy, aes(reorder(Description, NES), NES)) + geom_col(aes(fill=p.adjust< 0.2)) + theme_light() + coord_flip() + theme(axis.text = element_text(size = 11)) + scale_fill_manual(values = c(mycoloursP[4],mycoloursP[5])) + labs(x="", y="NES")
+```
+
+# GSEA GO
+
+```{r, fig.height=6, fig.width=12}
+## Load GMT file downloaded from MSigDB website 
+c5 <- read.gmt("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/MSigDB_C5")
+
+# Hallmarks
+msig_c5 <- GSEA(foldchanges, 
+               TERM2GENE=c5,
+               scoreType = "pos",
+               minGSSize = 3,
+               pvalueCutoff = 1,
+               pAdjustMethod = "BH")
+
+msig_C5_result <- data.frame(msig_c5)
+msig_C5_tidy <- msig_C5_result[1:20,]
+
+# Remove GOBP and _ for prettier label for graph 
+pathway <- rownames(msig_C5_tidy)
+pathway <- str_remove_all(pathway, "GOBP_")
+pathway <- str_replace_all(pathway, "_", " ")
+pathway <- tolower(pathway)
+msig_C5_tidy$Description <- pathway
+
+#Barplot
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/age/Fig3_GO.pdf", height = 6, width = 11)
+ggplot(msig_C5_tidy, aes(reorder(Description, NES), NES)) + geom_col(aes(fill=p.adjust< 0.2)) + theme_light() + coord_flip() + theme(axis.text = element_text(size = 13)) + scale_fill_manual(values = c(mycoloursP[4],mycoloursP[5])) + labs(x="", y="NES")
+dev.off()
+```
+
+# Tried artery vein and capillary markers 
+
+```{r}
+# Artery 
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/age/Fig5_artery.pdf", width = 10, height = 5)
+FeaturePlot(ec, features = c("VEGFC","ALPL"), max.cutoff = 2, cols = c("lightgrey",mycoloursP[8]))
+dev.off()
+# Vein 
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/age/Fig5_vein.pdf", width = 10, height = 5)
+FeaturePlot(ec, features = c("IL1R1","NR2F2"), max.cutoff = 2, cols = c("lightgrey","dodgerblue3"))
+dev.off()
+# Capillary
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/age/Fig5_capillary.pdf", width = 10, height = 5)
+FeaturePlot(ec, features = c("MFSD2A","SLC7A5"), max.cutoff = 2, cols = c("lightgrey",mycoloursP[3]))
+dev.off()
+```
+
+
+
+

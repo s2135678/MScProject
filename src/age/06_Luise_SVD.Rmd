@@ -233,7 +233,7 @@ saveRDS(svd_ec, "/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/pro
 Integrates quite well. SVD dataset uses Chromium Single Cell 3′ Library Kit v3 (1000078; 10× Genomics), ages ranging 78-94.  
 
 ```{r}
-ec <- readRDS(here("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/ec05.RDS")) 
+ec <- readRDS(here("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/Luise_ec.RDS")) 
 svd_ec <- readRDS("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/svd_ec.RDS")
 ec[["orig.ident"]] <- "norm"
 svd_ec[["orig.ident"]] <- "svd"
@@ -269,7 +269,9 @@ ElbowPlot(ec.comb, ndims = 50)
 # Visualisation
 ec.comb <- RunUMAP(ec.comb, dims = 1:20)
 DimPlot(ec.comb, reduction = "umap", group.by = "orig.ident")
-DimPlot(ec.comb, reduction = "umap", group.by = "BBN")
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/age/Fig4_SVD_dimplot.pdf", height = 5, width = 7)
+DimPlot(ec.comb, reduction = "umap", group.by = "BBN", cols = mycoloursP[1:20])
+dev.off()
 ```
 
 # Cluster
@@ -303,7 +305,7 @@ plot_list_func <- function(seur_obj,
 
 ec.comb <- FindNeighbors(ec.comb, dims = 1:20)
 # test different resolutions for clustering
-ec.comb <- FindClusters(ec.comb, resolution = c(0.01, 0.05, 
+ec.comb <- FindClusters(ec.comb, resolution = c(0.01, 0.05, 0.15,0.16,0.17,0.18, 
                                         seq(from = 0.1, to = 1, by = 0.1)))
 # non-linear reduction
 ec.comb <- RunUMAP(ec.comb, dims = 1:20)
@@ -325,7 +327,11 @@ FeaturePlot(ec.comb, features=c("nCount_RNA","nFeature_RNA"))
 25 cells from SVD sample contributes towards cluster 2. 
 
 ```{r}
-Idents(ec.comb) <- "integrated_snn_res.0.3"
+Idents(ec.comb) <- "integrated_snn_res.0.18"
+ids <- c("Endothelial_1", "Endothelial_2")
+names(ids) <- levels(ec.comb)
+ec.comb <- RenameIdents(ec.comb, ids)
+
 
 table(Idents(ec.comb), ec.comb$orig.ident)
 
@@ -338,10 +344,12 @@ ec.comb@meta.data$BBN <- corrected_BBN
 # Proportion of cells from each samples in different clusters
 prop_samples <- prop.table(table(Idents(ec.comb), ec.comb$BBN), margin=1)
 prop_samples <- as.data.frame(prop_samples)
-colnames(prop_samples) <- c("cluster", "samples", "proportion")
+colnames(prop_samples) <- c("Cluster", "Donors", "Proportion")
 
 # Plot a barplot 
-ggplot(as.data.frame(prop_samples), aes(x=cluster, y=proportion, fill= samples)) + geom_bar(stat="identity")+ theme_classic() + scale_fill_manual(values=mycoloursP[1:20])
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/age/Fig3_SVD.pdf", height = 5, width = 6)
+ggplot(as.data.frame(prop_samples), aes(x=Cluster, y=Proportion, fill= Donors)) + geom_bar(stat="identity")+ theme_classic() + scale_fill_manual(values=mycoloursP[1:20])
+dev.off()
 ```
 
 ## GSEA analysis

@@ -49,12 +49,12 @@ lau[["BBN"]] <- lau[["orig.ident"]]
 yang[["BBN"]] <- yang[["orig.ident"]]
 
 # Set orig.ident
-luise[["orig.ident"]] <- "Luise"
+luise[["orig.ident"]] <- "Seeker"
 lau[["orig.ident"]] <- "Lau"
 yang[["orig.ident"]] <- "Yang"
 
 # Merge data
-comb <- merge(x = luise, y = c(lau, yang), add.cell.ids = c("Luise", "Lau", "Yang"))
+comb <- merge(x = luise, y = c(lau, yang), add.cell.ids = c("Seeker", "Lau", "Yang"))
 ```
 
 ## Luise's age gap 
@@ -83,9 +83,11 @@ idx <- which(grepl("^0", cells_per_age$NumberOfCells))
 cells_per_age <- cells_per_age[-c(idx),]
 
 # Barplot
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/age/Fig7_a.pdf", height = 4, width=6)
 cells_per_age %>%
-  mutate(ageGroup = ifelse( as.numeric(as.character(cells_per_age$Age)) < 65, "AA (4,258 nuclei)", "Old (7,367 nuclei)")) %>%
+  mutate(ageGroup = ifelse( as.numeric(as.character(cells_per_age$Age)) < 65, "aYoung (4,258 nuclei)", "Old (7,367 nuclei)")) %>%
 ggplot(aes(x = Age, y = NumberOfCells, fill = Dataset)) + geom_bar(stat = "identity") + theme_light () +scale_fill_manual(values=mycoloursP[3:20]) + facet_wrap(~ ageGroup, scales = "free_x", strip.position = "bottom")
+dev.off()
 ```
 
 # CCA integration
@@ -122,8 +124,9 @@ ElbowPlot(integrated, ndims = 50)
 
 # Visualisation
 integrated <- RunUMAP(integrated, dims = 1:20)
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/age/Fig7_a_dim.pdf", height = 5, width = 8)
 DimPlot(integrated, reduction = "umap", group.by = "BBN", cols=mycoloursP[1:25])
-FeaturePlot(integrated, features = "FLT1")
+dev.off()
 ```
 
 ## Downsampling Yang's data
@@ -143,7 +146,7 @@ After using downsampled Yang's data, much better integration. The split between 
 ```{r, fig.height=5, fig.width=8}
 
 # Merge data
-comb_reduced <- merge(x = luise, y = c(lau, reduced_yang), add.cell.ids = c("Luise", "Lau", "Yang"), merge.data = TRUE)
+comb_reduced <- merge(x = luise, y = c(lau, reduced_yang), add.cell.ids = c("Seeker", "Lau", "Yang"), merge.data = TRUE)
 
 # Classify age group
 mod_metadata <- comb_reduced@meta.data  %>% mutate(AgeGroup = case_when(Age < 65 ~ 'Young',
@@ -161,9 +164,11 @@ idx <- which(grepl("^0", cells_per_age$NumberOfCells))
 cells_per_age <- cells_per_age[-c(idx),]
 
 # Barplot
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/age/Fig7_b.pdf", height = 4, width=6)
 cells_per_age %>%
-  mutate(ageGroup = ifelse( as.numeric(as.character(cells_per_age$Age)) < 65, "AA (519 nuclei)", "Old (656 nuclei)")) %>%
+  mutate(ageGroup = ifelse( as.numeric(as.character(cells_per_age$Age)) < 65, "aYoung (519 nuclei)", "Old (656 nuclei)")) %>%
 ggplot(aes(x = Age, y = NumberOfCells, fill = Dataset)) + geom_bar(stat = "identity") + theme_light () +scale_fill_manual(values=mycoloursP[3:20]) + facet_wrap(~ ageGroup, scales = "free_x", strip.position = "bottom")
+dev.off()
 ```
 
 ## Integration with downsampled Yang

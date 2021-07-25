@@ -1,0 +1,92 @@
+---
+title: "Untitled"
+author: "Sera Choi"
+date: "29/06/2021"
+output: html_document
+---
+
+```{r, message=FALSE, warning=FALSE}
+# Load library
+library(Seurat)
+library(ggplot2)
+library(ggsci)
+library(gtools)
+library(dplyr)
+library(here)
+library("scales")
+
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
+mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
+mypal4 <- pal_simpsons(palette = c("springfield"), alpha = 0.7)(16)
+mypal5 <- pal_rickandmorty(palette = c("schwifty"), alpha = 0.7)(6)
+mypal6 <- pal_futurama(palette = c("planetexpress"), alpha = 0.7)(5)
+mypal7 <- pal_startrek(palette = c("uniform"), alpha = 0.7)(5)
+mycoloursP<- c(mypal, mypal2, mypal3, mypal4, mypal5, mypal6, mypal7)
+show_col(mycoloursP, labels =F)
+```
+
+
+```{r, fig.width=10, fig.height=7}
+seur <- readRDS("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/Luise.RDS")
+
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/age/Luise_all_cells.pdf", width = 12)
+DimPlot(seur, reduction = "umap", label = FALSE, label.size = 5,cols= mycoloursP[18:40]) 
+dev.off()
+
+```
+
+```{r, fig.width=10, fig.height=10}
+FeaturePlot(seur, features=c("CLDN5", "VWF",  "FLT1", "ANO2", "ELOVL7", "ABCB1"))
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/age/Fig1_allcell_ec.pdf", width = 10, height = 5)
+FeaturePlot(seur, features=c("CLDN5","ABCB1","VWF",  "FLT1"), max.cutoff = 6, label = TRUE)
+dev.off()
+
+```
+
+```{r}
+ec <- readRDS("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/ecpc04.RDS")
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/age/Fig1_ec.pdf", height = 5, width = 5)
+DimPlot(ec, reduction = "umap", label = TRUE, label.size = 5.5,cols= mycoloursP[18:40]) +NoLegend()
+dev.off()
+```
+
+## Characterising cell-types
+
+```{r}
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/age/Fig1_ec_marker.pdf", width = 10, height = 5)
+FeaturePlot(ec, features=c("CLDN5","ABCB1"), cols = c("lightgrey",mycoloursP[18]), max.cutoff = 4)
+dev.off()
+
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/age/Fig1_p_marker.pdf", width = 10, height = 5)
+FeaturePlot(ec, features=c("PDGFRB",  "NOTCH3"), cols = c("lightgrey",mycoloursP[19]), max.cutoff = 4)
+dev.off()
+
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/age/Fig1_smc_marker.pdf", width = 10, height = 5)
+FeaturePlot(ec, features=c("MYH11","ACTA2"), cols = c("lightgrey",mycoloursP[21]), max.cutoff = 4)
+dev.off()
+```
+
+# Differential gene expression
+
+## EC markers
+
+```{r, fig.height=6, fig.width=8}
+ec.markers <- FindAllMarkers(ec, 
+                             only.pos = TRUE, 
+                             min.pct = 0.25, 
+                             logfc.threshold = 0.25,
+                             test.use = "MAST")
+
+ec.markers %>%
+    group_by(cluster) %>%
+    top_n(n = 10, wt = avg_log2FC) -> top10
+
+jpeg("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/age/DEG_NVU.png")
+DoHeatmap(ec, features = top10$gene, size = 3.5) + scale_fill_continuous(type = "viridis")
+dev.off()
+```
+
+
+
+

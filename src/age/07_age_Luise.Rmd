@@ -139,7 +139,7 @@ young.markers <- FindMarkers(ec,
                            logfc.threshold = 0.25,
                            test.use = "MAST")
 
-young.markers <- subset(young.markers,
+young.markers_sig <- subset(young.markers,
                             young.markers$p_val_adj < 0.05)
 young.markers
 VlnPlot(ec, features = rownames(young.markers), group.by = "AgeGroup")
@@ -352,104 +352,16 @@ Increased production of reactive oxygen species and/or reduced antioxidant defec
 
 Association of angeiogensis and age has been studied in heart. Angiogenesis is impaired in aged cells (microvessel ECs of heart). Due to this decline in microvascular density, there is decreased blood flow, impaired response to hypoxia, worsened ischemic tissue injury. During cardiac muscle growth, an imbalance between growth of muscle and impaired angiogenesis is likely to contribute towards cardiac failure. Ageing leads to dysregulated expression of both positive and negative regulators of angiogenesis in the heart. 
 
-```{r}
-VlnPlot(ec, features = "DLL4", group.by = "AgeGroup")
+
+## Figure 
+
+```{r, fig.height=2.5, fig.width=11}
+features <- c(rownames(old.markers_sig),rownames(young.markers))
+
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/age/Fig6_DEG.pdf", height = 2.5, width = 11)
+VlnPlot(ec, features = features, stack = TRUE, sort = TRUE, flip = F, cols = mycoloursP[15:30]) + theme(legend.position = "none", strip.text.x.top = element_text(angle = 0))
+dev.off()
 ```
-
-
-```{r}
-VlnPlot(ec, features = c("VEGFA","PDGFB"), group.by = "AgeGroup")
-```
-
-## Cell senescence
-
-Does cell senescence play role in brain EC ageing? Cell senescence is characterised by pro-inflammtory phenotype (cytokines and MMPs, upregulation of CDK inhibitors). Cellular senesence is emerging as a key mechanism of age-related vascular endothelial dysfuntion. There is a hypothesis that senescent ECs accummulate with ageing and causes disruptions to BBB and neurovascular decoupling. 
-
-```{r}
-VlnPlot(ec, features=c('VCAM1', "IL1B"), group.by="AgeGroup")
-```
-
-## Microglia cells 
-
-```{r}
-seur <- readRDS("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/srt_anno_01.RDS")
-DimPlot(seur, reduction = "umap")
-microglial <- subset(seur, idents = c("Microglia-Macrophages_1","Microglia-Macrophages_2"))
-
-# Feature Selection
-microglial <- FindVariableFeatures(microglial, selection.method = "vst", nfeatures = 2000)
-all.genes <- rownames(microglial)
-microglial <- ScaleData(microglial, features = all.genes)
-
-# Dimensionality reduction
-microglial <- RunPCA(microglial, features = VariableFeatures(object = microglial))
-DimPlot(microglial, reduction = "pca")
-ElbowPlot(microglial, ndims = 50)
-
-# Cluster at different resolutions 
-microglial <- FindNeighbors(microglial, dims = 1:20)
-microglial <- FindClusters(microglial, resolution = seq(from = 0.1, to = 1, by = 0.1))
-microglial <- RunUMAP(microglial, dims = 1:20)
-
-#Generate DimPlot of all tested clustering resolutions in metadata
-# requires gtools library and Seurat
-plot_list_func <- function(seur_obj,
-                           col_pattern,
-                           clust_lab = TRUE,
-                           label_size = 8,
-                           num_col = 4){
-  # finds column with additional resolution clusterings
-  extr_res_col <- grep(pattern = col_pattern, names(seur_obj@meta.data))
-  # obtain column names
-  res_names <- names(seur_obj@meta.data[extr_res_col])
-  
-  # gtools function, sorts gene_names alphanumeric:
-  res_names <- mixedsort(res_names) 
-  plot_l <-list()
-  
-  for(i in 1: length(res_names)){
-  dim_plot <- DimPlot(seur_obj, 
-                      reduction = "umap", 
-                      group.by = res_names[i],
-                      label = clust_lab,
-                      label.size = label_size) + NoLegend()
-  print(dim_plot)
- }
-}
-
-plot_list_func(microglial, col_pattern = "RNA_snn_res.")
-
-
-
-FeaturePlot(microglial, features=c("TMEM119","ITGAM","PTPRC"))
-
-Idents(microglial) <- "AgeGroup"
-
-table(Idents(microglial))
-
-ecpcmc <- merge(ecpc, microglial, merge.data = TRUE)
-
-# Feature Selection
-ecpcmc <- FindVariableFeatures(ecpcmc, selection.method = "vst", nfeatures = 2000)
-all.genes <- rownames(ecpcmc)
-ecpcmc <- ScaleData(ecpcmc, features = all.genes)
-
-# Dimensionality reduction
-ecpcmc <- RunPCA(ecpcmc, features = VariableFeatures(object = ecpcmc))
-DimPlot(ecpcmc, reduction = "pca")
-ElbowPlot(ecpcmc, ndims = 50)
-
-# Cluster at different resolutions 
-ecpcmc <- FindNeighbors(ecpcmc, dims = 1:20)
-ecpcmc <- FindClusters(ecpcmc, resolution = seq(from = 0.1, to = 1, by = 0.1))
-ecpcmc <- RunUMAP(ecpcmc, dims = 1:20)
-
-plot_list_func(ecpcmc, col_pattern = "RNA_snn_res.")
-
-
-```
-
-
 
 
 

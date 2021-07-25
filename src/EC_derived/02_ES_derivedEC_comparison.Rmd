@@ -183,7 +183,7 @@ Idents(ec) <- "orig.ident"
 
 ec.markers <- FindMarkers(ec,
                            ident.1 = "Luise",
-                           ident.2 = "Craken_1",
+                           ident.2 = "McCracken",
                            only.pos = TRUE, 
                            min.pct = 0.25, 
                            logfc.threshold = 0.25,
@@ -200,6 +200,7 @@ ec.markers_stringent$log10_FDR <- -log10(ec.markers_stringent$p_val_adj)
 ggplot(data = ec.markers_stringent[1:20,], aes(x = reorder(gene, -avg_log2FC), y = avg_log2FC, fill = log10_FDR)) + geom_bar(stat="identity")  + theme_light()+ theme(axis.text = element_text(size=13), axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=0.4), legend.text = element_text(size = 12), legend.title = element_text(size = 13), text = element_text(size = 15)) + scale_fill_continuous(type="viridis")
 
 # Dotplot
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/es-derived/dotplot1.pdf", width = 12, height = 6)
 dittoDotPlot(object = ec, 
              vars = rownames(ec.markers_stringent)[1:20], 
              group.by = "orig.ident", 
@@ -208,7 +209,8 @@ dittoDotPlot(object = ec,
              max.color = "orangered",
              size = 10,
              assay = "RNA") + theme_light() +
-  theme(axis.text = element_text(size=13), legend.text = element_text(size = 12), axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=0.4)) 
+  theme(axis.text = element_text(size=13), legend.text = element_text(size = 12), axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) 
+dev.off()
 ```
 
 ## GSEA with MSigDB Hallmarks 
@@ -264,7 +266,7 @@ msig_H_result_ec <- data.frame(msig_h_ec)
 msig_H_tidy_ec <- subset(msig_H_result_ec, subset = msig_H_result_ec$p.adjust<0.5)
 
 #Barplot
-ggplot(msig_H_tidy_ec, aes(reorder(Description, NES), NES)) + geom_col(aes(fill=p.adjust< 0.2)) + theme_minimal() + coord_flip() + theme(axis.title = element_text(size = 12))
+ggplot(msig_H_tidy_ec, aes(reorder(Description, NES), NES)) + geom_col(aes(fill=p.adjust< 0.2)) + theme_minimal() + coord_flip() + theme(axis.text = element_text(size = 12)) + scale_fill_manual(values = c(mycoloursP[4],mycoloursP[5])) 
 ```
 
 
@@ -286,9 +288,16 @@ msig_C5_result_ec <- data.frame(msig_c5_ec)
 
 msig_C5_tidy_ec <- subset(msig_C5_result_ec, subset = msig_C5_result_ec$p.adjust<0.25)
 
+# Remove GOBP and _ for prettier label for graph 
+pathway <- rownames(msig_C5_tidy_ec)
+pathway <- str_remove_all(pathway, "GOBP_")
+pathway <- str_replace_all(pathway, "_", " ")
+pathway <- tolower(pathway)
+msig_C5_tidy_ec$Description <- pathway
+
 #Barplot
-pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/GO_ec.pdf")
-ggplot(msig_C5_tidy_ec, aes(reorder(Description, NES), NES)) + geom_col(aes(fill=p.adjust< 0.2)) + theme_minimal() + coord_flip() + theme(axis.title = element_text(size = 12))
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/es-derived/GO_ec.pdf", width = 10, height = 8)
+ggplot(msig_C5_tidy_ec, aes(reorder(Description, NES), NES)) + geom_col(aes(fill=p.adjust< 0.2)) + theme_minimal() + coord_flip() + theme(axis.text = element_text(size = 14)) + scale_fill_manual(values = c(mycoloursP[4],mycoloursP[5])) 
 dev.off()
 ```
 
@@ -299,14 +308,17 @@ dev.off()
 ```{r}
 DefaultAssay(ec) <- "RNA"
 Idents(ec) <- "orig.ident"
+ec <- NormalizeData(ec)
 
 all.markers <- FindMarkers(ec,
-                           ident.1 = "Craken_1",
+                           ident.1 = "McCracken",
                            ident.2 = "Luise",
                            only.pos = FALSE, 
                            min.pct = 0.25,
                            logfc.threshold = 0,
                            test.use = "MAST")
+
+all.markers_sig <- subset(all.markers, subset = all.markers$p_val_adj < 0.0001)
 
 # Format list of DEGs
 all.markers$diff <- "NO"
