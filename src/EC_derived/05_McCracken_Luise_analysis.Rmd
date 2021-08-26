@@ -40,11 +40,20 @@ Using top 20 enhanced genes in Young Adult Brain ECs, here, I try to see if thes
 # Load data
 ec <- readRDS("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/McCracken_Luise_integrated.RDS")
 
+# Classify age group
+mod_metadata <- ec@meta.data  %>% mutate(orig.ident = case_when(orig.ident == "McCracken_H9_Day8" ~ "McCracken_H9_Day8",
+                                                                orig.ident == "McCracken_H9_Day12" ~ "McCracken_H9_Day12",
+                                                                orig.ident == "McCracken_RC11_Day8" ~ "McCracken_RC11_Day8",
+                                                                orig.ident == "Luise_young" ~ "Seeker_BECs"))
+                                    
+ec[["orig.ident"]] <- mod_metadata$orig.ident
+
+
 DefaultAssay(ec) <- "RNA"
 Idents(ec) <- "orig.ident"
 
 ec.markers <- FindMarkers(ec,
-                           ident.1 = "Luise_young",
+                           ident.1 = "Seeker_BECs",
                            ident.2 = "McCracken_H9_Day8",
                            only.pos = TRUE, 
                            min.pct = 0.25, 
@@ -57,7 +66,7 @@ ec.markers_sig <- subset(ec.markers, ec.markers$p_val_adj < 0.05 )
 ec.markers_stringent <- subset(ec.markers, ec.markers$p_val_adj < 0.05 & ec.markers$pct.1 > 0.25 & ec.markers$pct.2 < 0.25)
 
 # Dotplot
-pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/es-derived/dotplot2.pdf", width = 12, height = 6)
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/es-derived/dotplot2.pdf", width = 12, height = 5)
 dittoDotPlot(object = ec, 
              vars = rownames(ec.markers_stringent)[1:20], 
              group.by = "orig.ident", 

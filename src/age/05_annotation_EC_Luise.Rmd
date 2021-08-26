@@ -384,3 +384,25 @@ FeaturePlot(ec, feature=c("NR2F2",
                             "TEK"))
 ```
 
+
+# figure generation 
+
+```{r}
+ec <- readRDS("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/Luise_ec.RDS")
+DimPlot(ec, reduction = "umap")
+
+clust2_markers <- FindMarkers(ec, 
+                              ident.1 = 2,
+                              ident.2 = c(0,1),
+                              only.pos = TRUE, 
+                              min.pct = 0.25, 
+                              logfc.threshold = 0.25,
+                              test.use = "MAST")
+
+clust2_markers_sig <- subset(clust2_markers, subset = clust2_markers$p_val_adj < 0.05)
+write.csv(clust2_markers_sig[1:50,], "/Users/serachoi/Documents/Edinburgh/MScProject/Project/docs/endo1_vs_endo2.csv")
+```
+
+
+
+

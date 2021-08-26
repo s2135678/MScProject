@@ -99,7 +99,11 @@ table(ec.integrated@meta.data$orig.ident)
 ## QC of integrated data
 
 ```{r}
-VlnPlot(ec.integrated, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, group.by = "orig.ident", pt.size = 0)
+ec.integrated <- readRDS("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/McCracken_Luise_integrated.RDS")
+ec <- subset(ec.integrated, idents = c("McCracken_H9_Day8" ,"McCracken_H9_Day12",  "McCracken_RC11_Day8"))
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/method/McCrackenQC.pdf", width = 15, height = 5 )
+VlnPlot(ec, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, group.by = "orig.ident", pt.size = 0, cols = mycoloursP[35:40])
+dev.off()
 plot1 <- FeatureScatter(ec.integrated, feature1 = "nCount_RNA", feature2 = "percent.mt")
 plot2 <- FeatureScatter(ec.integrated, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
 plot1 + plot2

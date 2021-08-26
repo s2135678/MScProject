@@ -58,19 +58,22 @@ DefaultAssay(ec) <- "RNA"
 Idents(ec) <- "orig.ident"
 
 es.markers <- FindMarkers(ec,
-                           ident.1 = "McCracken",
-                           ident.2 = "Luise",
+                           ident.1 = "McCracken_H9_Day8",
+                           ident.2 = "Seeker_BECs",
                            only.pos = TRUE, 
                            min.pct = 0.25, 
                            logfc.threshold = 0.25,
                            test.use = "MAST")
 es.markers
+write.csv(es.markers, "/Users/serachoi/Documents/Edinburgh/MScProject/Project/docs/es_up_unfiltered.csv")
 
 es.markers_sig <- subset(es.markers, es.markers$p_val_adj < 0.05 )
 
 es.markers_stringent <- subset(es.markers, es.markers$p_val_adj < 0.05 & es.markers$pct.1 > 0.25 & es.markers$pct.2 < 0.25)
+write.csv(es.markers_stringent, "/Users/serachoi/Documents/Edinburgh/MScProject/Project/docs/es_up.csv")
 
 # Dotplot
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/es-derived/dot_es.pdf", height = 3.7, width = 10)
 dittoDotPlot(object = ec, 
              vars = rownames(es.markers_stringent)[1:20], 
              group.by = "orig.ident", 
@@ -79,7 +82,8 @@ dittoDotPlot(object = ec,
              max.color = "orangered",
              size = 10,
              assay = "RNA") + theme_light() +
-  theme(axis.text = element_text(size=13), legend.text = element_text(size = 12), axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=0.4))
+  theme(axis.text = element_text(size=13), axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+dev.off()
 ```
 
 ### Ribosomal gene 
@@ -91,7 +95,9 @@ rps <- PercentageFeatureSet(ec, pattern = "^RPS", assay = "RNA")
 ec[["percent.ribo"]] <- rpl+rps
 
 # Plot
-VlnPlot(ec, features = "percent.ribo", group.by = "orig.ident")
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/es-derived/ribo.pdf", height = 5, width = 6)
+VlnPlot(ec, features = "percent.ribo", group.by = "orig.ident", cols = mycoloursP[1:20])
+dev.off()
 ```
 
 ## GSEA with MSigDB Hallmarks 
@@ -168,8 +174,17 @@ msig_C5_result_es <- data.frame(msig_c5_es)
 
 msig_C5_tidy_es <- subset(msig_C5_result_es, subset = msig_C5_result_es$p.adjust<0.6)
 
+# Remove GOBP and _ for prettier label for graph 
+pathway <- rownames(msig_C5_tidy_es)
+pathway <- str_remove_all(pathway, "GOBP_")
+pathway <- str_replace_all(pathway, "_", " ")
+pathway <- tolower(pathway)
+msig_C5_tidy_es$Description <- pathway
+
 #Barplot
-ggplot(msig_C5_result_es[1:10,], aes(reorder(Description, NES), NES)) + geom_col(aes(fill=p.adjust< 0.2)) + theme_minimal() + coord_flip() + theme(axis.text = element_text(size = 11))
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/es-derived/GO_es.pdf", height = 8, width = 13)
+ggplot(msig_C5_tidy_es[1:20,], aes(reorder(Description, NES), NES)) + geom_col(aes(fill=p.adjust< 0.2)) + theme_light() + coord_flip() + theme(axis.text = element_text(size = 18))+ scale_fill_manual(values = c(mycoloursP[5],mycoloursP[4])) + labs(x="", y="NES")
+dev.off()
 ```
 
 
@@ -182,17 +197,20 @@ DefaultAssay(ec) <- "RNA"
 Idents(ec) <- "orig.ident"
 
 ec.markers <- FindMarkers(ec,
-                           ident.1 = "Luise",
-                           ident.2 = "McCracken",
+                           ident.1 = "Seeker_BECs",
+                           ident.2 = "McCracken_H9_Day8",
                            only.pos = TRUE, 
                            min.pct = 0.25, 
                            logfc.threshold = 0.25,
                            test.use = "MAST")
 ec.markers
+write.csv(ec.markers, "/Users/serachoi/Documents/Edinburgh/MScProject/Project/docs/ec_up_unfiltered.csv")
 
 ec.markers_sig <- subset(ec.markers, ec.markers$p_val_adj < 0.05 )
 
 ec.markers_stringent <- subset(ec.markers, ec.markers$p_val_adj < 0.05 & ec.markers$pct.1 > 0.25 & ec.markers$pct.2 < 0.25)
+write.csv(ec.markers_stringent, "/Users/serachoi/Documents/Edinburgh/MScProject/Project/docs/ec_up.csv")
+
 
 # BarPlot
 ec.markers_stringent$gene <- rownames(ec.markers_stringent)
@@ -200,7 +218,7 @@ ec.markers_stringent$log10_FDR <- -log10(ec.markers_stringent$p_val_adj)
 ggplot(data = ec.markers_stringent[1:20,], aes(x = reorder(gene, -avg_log2FC), y = avg_log2FC, fill = log10_FDR)) + geom_bar(stat="identity")  + theme_light()+ theme(axis.text = element_text(size=13), axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=0.4), legend.text = element_text(size = 12), legend.title = element_text(size = 13), text = element_text(size = 15)) + scale_fill_continuous(type="viridis")
 
 # Dotplot
-pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/es-derived/dotplot1.pdf", width = 12, height = 6)
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/es-derived/dot_ec.pdf", width = 10, height = 3.7)
 dittoDotPlot(object = ec, 
              vars = rownames(ec.markers_stringent)[1:20], 
              group.by = "orig.ident", 
@@ -297,7 +315,7 @@ msig_C5_tidy_ec$Description <- pathway
 
 #Barplot
 pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/es-derived/GO_ec.pdf", width = 10, height = 8)
-ggplot(msig_C5_tidy_ec, aes(reorder(Description, NES), NES)) + geom_col(aes(fill=p.adjust< 0.2)) + theme_minimal() + coord_flip() + theme(axis.text = element_text(size = 14)) + scale_fill_manual(values = c(mycoloursP[4],mycoloursP[5])) 
+ggplot(msig_C5_tidy_ec[1:20,], aes(reorder(Description, NES), NES)) + geom_col(aes(fill=p.adjust< 0.2)) + theme_light() + coord_flip() + theme(axis.text = element_text(size = 18)) + scale_fill_manual(values = c(mycoloursP[5],mycoloursP[4])) 
 dev.off()
 ```
 

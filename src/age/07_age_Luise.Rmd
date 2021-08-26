@@ -20,6 +20,7 @@ library(here)
 library("scales")
 library(future)
 
+
 mypal <- pal_npg("nrc", alpha = 0.7)(10)
 mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
 mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
@@ -98,6 +99,7 @@ old.markers <- FindMarkers(ec,
                            test.use = "MAST")
 
 old.markers_sig <- subset(old.markers, old.markers$p_val_adj < 0.05)
+write.csv(old.markers_sig, "/Users/serachoi/Documents/Edinburgh/MScProject/Project/docs/Luise_DE_age.csv")
 
 #old.markers_sig <- subset(old.markers,
 #                          old.markers$pct.1 > 0.25 &
@@ -141,6 +143,8 @@ young.markers <- FindMarkers(ec,
 
 young.markers_sig <- subset(young.markers,
                             young.markers$p_val_adj < 0.05)
+write.csv(young.markers_sig, "/Users/serachoi/Documents/Edinburgh/MScProject/Project/docs/Luise_DE_age_young.csv")
+
 young.markers
 VlnPlot(ec, features = rownames(young.markers), group.by = "AgeGroup")
 ```

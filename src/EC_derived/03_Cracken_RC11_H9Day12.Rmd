@@ -95,6 +95,11 @@ seur <- FindClusters(seur, resolution = 0.01, verbose = FALSE)
 DimPlot(seur, reduction = "umap")
 
 saveRDS(seur, "/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/McCracken_H9_day12.RDS")
+
+seur <- readRDS("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/McCracken_H9_day12.RDS")
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/es-derived/H9_day12_umap.pdf", width = 5, height = 5)
+DimPlot(seur, reduction = "umap", cols = mycoloursP[1:20], label = T, label.size = 8)
+dev.off()
 ```
 
 ## Cell-type characterisation
@@ -111,7 +116,9 @@ Using gene markers Craken et al used:
 
 ```{r, fig.width=10}
 # endothelial 
-FeaturePlot(seur, features = c('PECAM1', 'KDR', 'CD34', 'CDH5'))
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/es-derived/H9_day12_ec.pdf", width = 10, height = 5)
+FeaturePlot(seur, features = c('PECAM1', 'KDR'), label = T, label.size = 8)
+dev.off()
 # Mesenchymal
 FeaturePlot(seur, features = c('ACTA2', 'ALCAM', 'PDGFRB'))
 ```
@@ -184,7 +191,9 @@ DimPlot(seur, reduction = "umap")
 # CLustering 
 seur <- FindNeighbors(seur, dims = 1:20, verbose = FALSE)
 seur <- FindClusters(seur, resolution = 0.01, verbose = FALSE)
-DimPlot(seur, reduction = "umap")
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/es-derived/RC11_umap.pdf", width = 5, height = 5)
+DimPlot(seur, reduction = "umap", cols = mycoloursP[1:20], label = T, label.size = 8)
+dev.off()
 
 saveRDS(seur, "/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/McCracken_RC11.RDS")
 ```
@@ -203,7 +212,9 @@ Using gene markers Craken et al used:
 
 ```{r, fig.width=10}
 # endothelial 
-FeaturePlot(seur, features = c('PECAM1', 'KDR', 'CD34', 'CDH5'))
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/es-derived/RC11_ec.pdf", width = 10, height = 5)
+FeaturePlot(seur, features = c('PECAM1', 'KDR'), label = T, label.size = 8)
+dev.off()
 # Mesenchymal
 FeaturePlot(seur, features = c('ACTA2', 'ALCAM', 'PDGFRB'))
 ```

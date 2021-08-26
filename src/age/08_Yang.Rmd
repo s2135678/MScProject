@@ -16,6 +16,16 @@ library(ggsci)
 library(gtools)
 library(future)
 
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
+mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
+mypal4 <- pal_simpsons(palette = c("springfield"), alpha = 0.7)(16)
+mypal5 <- pal_rickandmorty(palette = c("schwifty"), alpha = 0.7)(6)
+mypal6 <- pal_futurama(palette = c("planetexpress"), alpha = 0.7)(5)
+mypal7 <- pal_startrek(palette = c("uniform"), alpha = 0.7)(5)
+mycoloursP<- c(mypal, mypal2, mypal3, mypal4, mypal5, mypal6, mypal7)
+show_col(mycoloursP, labels =F)
+
 options(future.globals.maxSize = 50000*1024^2)
 ```
 
@@ -37,9 +47,12 @@ Following Yang et al, nuclei with percent.mito > 5%, features < 200 and features
 
 ```{r}
 yang[["percent.mt"]] <- PercentageFeatureSet(yang, pattern = "^MT-")
-VlnPlot(yang, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size = 0)
+VlnPlot(yang, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size = 0, cols = mycoloursP[20:30])
 
 yang <- subset(yang, subset = nFeature_RNA > 200 & nFeature_RNA < 5000 & percent.mt < 5)
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/method/YangQC.pdf", width = 15, height = 5 )
+VlnPlot(yang, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size = 0, cols = mycoloursP[20:30])
+dev.off()
 plot1 <- FeatureScatter(yang, feature1 = "nCount_RNA", feature2 = "percent.mt")
 plot2 <- FeatureScatter(yang, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
 plot1 + plot2
@@ -54,8 +67,9 @@ yang <- SCTransform(yang, vars.to.regress = "percent.mt", verbose = TRUE)
 yang <- RunPCA(yang, verbose = FALSE)
 
 yang <- RunUMAP(yang, dims = 1:30, verbose = FALSE)
-DimPlot(yang, reduction="umap")
-FeaturePlot(yang, features = "CLDN5")
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/age/yang_inte1", width = 8, height = 5)
+DimPlot(yang, reduction="umap", cols = mycoloursP[1:20])
+dev.off()
 ```
 
 
@@ -97,7 +111,9 @@ yang.combined <- RunUMAP(yang.combined, dims = 1:20)
 ```
 
 ```{r}
-DimPlot(yang.combined, reduction = "umap", group.by = "orig.ident")
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/age/yang_inte2", width = 8, height = 5)
+DimPlot(yang.combined, reduction = "umap", group.by = "orig.ident", cols = mycoloursP[1:20])
+dev.off()
 ```
 
 # Cluster
@@ -161,6 +177,9 @@ There are 19,655 BECs.
 
 ```{r}
 Idents(yang.combined) <- "integrated_snn_res.0.01"
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/age/yang_EC", width = 10, height = 5)
+FeaturePlot(yang.combined, features= c("CLDN5","ABCB1"), label = T, label.size = 8)
+dev.off()
 table(Idents(yang.combined))
 
 # Subset 
@@ -199,15 +218,21 @@ plot_list_func(seur_obj = ec, col_pattern = "integrated_snn_res.")
 
 Using gene markers Yang et al used, identified capillary BECs. 
 
-```{r, fig.width=10, fig.height=6}
+```{r, fig.width=10, fig.height=5}
+Idents(ec) <- "integrated_snn_res.0.1"
+DefaultAssay(ec) <- "RNA"
 # Arterial
-FeaturePlot(ec, features = c('ARL15', 'VEGFC', 'BMP6'))
-
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/age/yang_artery", width = 10, height = 5)
+FeaturePlot(ec, features = c('ARL15', 'VEGFC'), label = T, label.size = 8, max.cutoff = 10)
+dev.off()
 # Capillary
-FeaturePlot(ec, features= c('SLC7A1','ABCB1','SLC7A5'))
-
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/age/yang_cap", width = 10, height = 5)
+FeaturePlot(ec, features= c('SLC7A1','ABCB1'), label = T, label.size = 8, max.cutoff = 10)
+dev.off()
 # Vein
-FeaturePlot(ec, features= c('TSHZ2','AFF3','LINC02147'))
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/age/yang_vein", width = 10, height = 5)
+FeaturePlot(ec, features= c('TSHZ2','AFF3'), label = T, label.size = 8, max.cutoff = 10)
+dev.off()
 ```
 
 ### Subset capillary ECs 

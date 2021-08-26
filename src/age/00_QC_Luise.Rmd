@@ -19,6 +19,17 @@ library(Seurat)
 library(ggplot2)
 library(dplyr)
 library(here)
+library("scales")
+
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
+mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
+mypal4 <- pal_simpsons(palette = c("springfield"), alpha = 0.7)(16)
+mypal5 <- pal_rickandmorty(palette = c("schwifty"), alpha = 0.7)(6)
+mypal6 <- pal_futurama(palette = c("planetexpress"), alpha = 0.7)(5)
+mypal7 <- pal_startrek(palette = c("uniform"), alpha = 0.7)(5)
+mycoloursP<- c(mypal, mypal2, mypal3, mypal4, mypal5, mypal6, mypal7)
+show_col(mycoloursP, labels =F)
 
 # Load data
 ecpc <- readRDS(here("data/processed/ecpc.RDS")) 
@@ -61,18 +72,21 @@ Luise's thresholds are:
 
 Here, I plotted violin plot for three covariates and created a table showing min and max values for each covariate in the dataset. The minimum and maximum values in the dataset agrees with the thresholds. I created plots at two endothelial population level and at sample level. 
 
-```{r}
+```{r, fig.width=15, fig.height=5}
 # At cell annotation level
 VlnPlot(ecpc, 
         features = c("nFeature_RNA","nCount_RNA", "percent.mt"), 
         ncol = 3)
 
 # At sample level 
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/method/SeekerQC.pdf", width = 15, height = 5 )
 VlnPlot(ecpc, 
         features = c("nFeature_RNA","nCount_RNA", "percent.mt"), 
         ncol = 3, 
         group.by = "BBN",
-        pt.size = FALSE)
+        pt.size = FALSE,
+        cols = mycoloursP[1:20])
+dev.off()
 
 # Create table containing min and max values of count depth, expressed genes and mito %
 metadata <- ecpc@meta.data #metadata

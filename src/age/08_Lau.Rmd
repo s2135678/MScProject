@@ -20,6 +20,16 @@ library(ggsci)
 library(gtools)
 library(future)
 
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
+mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
+mypal4 <- pal_simpsons(palette = c("springfield"), alpha = 0.7)(16)
+mypal5 <- pal_rickandmorty(palette = c("schwifty"), alpha = 0.7)(6)
+mypal6 <- pal_futurama(palette = c("planetexpress"), alpha = 0.7)(5)
+mypal7 <- pal_startrek(palette = c("uniform"), alpha = 0.7)(5)
+mycoloursP<- c(mypal, mypal2, mypal3, mypal4, mypal5, mypal6, mypal7)
+show_col(mycoloursP, labels =F)
+
 options(future.globals.maxSize = 50000*1024^2)
 ```
 
@@ -46,7 +56,7 @@ All looks okay apart from NC11. Smaller library size and high mito transcript in
 
 I followed Lau et al's quality threshold values. Before filtering, there were 45,133 nuclei. After QC, there are 43,616 nuclei (1517 removed).
 
-```{r,fig.width= 10, fig.height= 5}
+```{r,fig.width= 15, fig.height= 5}
 lau[["percent.mt"]] <- PercentageFeatureSet(lau, pattern = "^MT-")
 VlnPlot(lau, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size = FALSE)
 plot1 <- FeatureScatter(lau, feature1 = "nCount_RNA", feature2 = "percent.mt")
@@ -57,7 +67,9 @@ plot1 + plot2
 # Filter out low quality cells 
 lau <- subset(lau, subset = nFeature_RNA > 200 & nFeature_RNA < 20000 & percent.mt < 20)
 
-VlnPlot(lau, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size = FALSE)
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/method/LauQC.pdf", width = 15, height = 5 )
+VlnPlot(lau, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size = FALSE, cols = mycoloursP[10:30])
+dev.off()
 plot1 <- FeatureScatter(lau, feature1 = "nCount_RNA", feature2 = "percent.mt")
 plot2 <- FeatureScatter(lau, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
 plot1 + plot2
@@ -94,7 +106,9 @@ The dataset shows batch effect, so I will continue onto integration.
 
 ```{r, message=FALSE, warning=FALSE}
 lau <- RunUMAP(lau, dims = 1:25)
-DimPlot(lau, reduction='umap',group.by = "orig.ident")
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/age/lau_inte1", width = 8, height = 5)
+DimPlot(lau, reduction='umap',group.by = "orig.ident", cols = mycoloursP[1:20])
+dev.off()
 ```
 
 ## Integration
@@ -131,7 +145,9 @@ ElbowPlot(lau.combined, ndims = 50)
 
 # Visualisation
 lau.combined <- RunUMAP(lau.combined, dims = 1:20)
-DimPlot(lau.combined, reduction = "umap", group.by = "orig.ident")
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/age/lau_inte2", width = 8, height = 5)
+DimPlot(lau.combined, reduction = "umap", group.by = "orig.ident", cols = mycoloursP[1:20])
+dev.off()
 ```
 
 # Clustering 
@@ -145,11 +161,10 @@ lau.combined <- RunUMAP(lau.combined, dims = 1:20)
 DimPlot(lau.combined, reduction = "umap", label = TRUE)
 ```
 
-```{r, fig.width= 15, fig.height= 13}
-FeaturePlot(lau.combined, features= c("CLDN5",
-                                      "FLT1",
-                                      "ABCB1"))
-
+```{r, fig.width= 10, fig.height= 5}
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/age/lau_EC", width = 10, height = 5)
+FeaturePlot(lau.combined, features= c("CLDN5","ABCB1"))
+dev.off()
 ```
 
 ## Subset for ECs 
@@ -163,7 +178,6 @@ saveRDS(lau_ec, "/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/pro
 # Processing of EC population from Lau et al
 
 ```{r}
-
 lau_ec <- readRDS("/Users/serachoi/Documents/Edinburgh/MScProject/Project/data/processed/Lau_ec.RDS")
 
 # Quality control 
@@ -176,7 +190,7 @@ plot1 + plot2
 lau_ec <- FindVariableFeatures(lau_ec, selection.method = "vst", nfeatures = 2000)
 all.genes <- rownames(lau_ec)
 lau_ec <- ScaleData(lau_ec, features = all.genes)
-ß
+
 # Linear Dimensional reduction 
 lau_ec <- RunPCA(lau_ec, features = VariableFeatures(object = lau_ec))
 DimPlot(lau_ec, reduction = "pca")
@@ -220,35 +234,26 @@ plot_list_func(lau_ec, col_pattern = "integrated_snn_res.")
 ### EC markers
 
 ```{r, fig.width= 15, fig.height= 13}
-FeaturePlot(lau_ec, features= c("CLDN5", 
-                               "VWF", 
-                               "FLT1", 
-                               "ANO2", 
-                               "ST6GALNAC3", 
-                               "ELOVL7", 
-                               "ABCB1"))
+DefaultAssay(lau_ec) <- "RNA"
+Idents(lau_ec) <-  "integrated_snn_res.0.4"
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/age/lau_EC_marker", width = 10, height = 5)
+FeaturePlot(lau_ec, features= c("CLDN5", "ABCB1"), label = T, label.size = 8)
+dev.off()
 ```
 
 ### Pericyte markers 
 
 ```{r, fig.width= 15, fig.height= 13}
-FeaturePlot(lau_ec, features= c("PDGFRB", 
-                              "NOTCH3", 
-                              "PRKG1", 
-                              "LAMA2", 
-                              "GPC5", 
-                              "PDE7B",
-                              "DLC1"))
+pdf("/Users/serachoi/Documents/Edinburgh/MScProject/Project/outs/age/lau_P_marker", width = 10, height = 5)
+FeaturePlot(lau_ec, features= c("PDGFRB","NOTCH3"), label = T, label.size = 8)
+dev.off()
 ```
 
 ### SMC markers 
 
 ```{r}
 DefaultAssay(lau_ec) <- "RNA"
-FeaturePlot(lau_ec, features= c("MYH11", 
-                              "TAGLN", 
-                              "ACTA2", 
-                              "MYL9"))
+FeaturePlot(lau_ec, features= c("TAGLN", "MYL9"))
 ```
 
 ## Subset for ECs only 
